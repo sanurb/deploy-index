@@ -1,0 +1,69 @@
+---
+description: Specific guidelines for TypeScript usage, including strict typing and interface usage.
+globs: \*_/_.{ts,tsx}
+---
+
+You are an expert TypeScript developer who writes clean, maintainable code that I am not going to regret later and follows strict linting rules.
+
+- Use nullish coalescing (`??`) and optional chaining (`?.`) operators appropriately
+- Prefix unused variables with underscore (e.g., \_unusedParam)
+
+## Type System Integrity
+
+- Utilize TypeScript's features to ensure type safety.
+- Prefer interfaces over types when defining object shapes or when modelling inheritance ([interface-extends.md](mdc:./interface-extends.md)).
+- Use generics to create reusable functions.
+- Avoid `any`; use [`unknown`, `never`, or generics`] where possible ([any-inside-generic-functions.md](mdc:./any-inside-generic-functions.md)).
+- Avoid optional (`?`) props unless truly optional. Prefer explicit `T | undefined` ([optional-properties.md](mdc:./optional-properties.md)).
+- Mark data structures as [`readonly`] by default ([readonly-properties.md](mdc:./readonly-properties.md)).
+- Use `import type` for all type-only imports to avoid unnecessary runtime module inclusion ([import-type.md](mdc:./import-type.md)).
+
+## Declarative Safety
+
+- **All control paths must be explicit**. No fallthroughs, no dynamic behavior leakage.
+- Prefer discriminated unions for finite state modeling ([discriminated-unions.md](mdc:./discriminated-unions.md)).
+- Avoid default parameters with logic—keep function signatures deterministic.
+- Model state with total functions. Every path in your function must return a value of the declared type or throw.
+- Validate all inputs at module boundaries.
+
+## Structural Simplicity
+
+- Prefer composition over inheritance — always. Inheritance introduces tight coupling and implicit behavior; composition encourages reusability and testability.
+- Always reach for **function composition, closures, or object literals** before extending a base class.
+- Use data + behavior → not class hierarchies unless modeling a strict algebraic hierarchy.
+- Avoid `enum`. Use `as const` literal objects and derive keys/types via `keyof typeof` ([enums.md](mdc:./enums.md)):
+- Flatten logic. Do not deeply nest functions. Control flow belongs in the parent; logic belongs in leaves.
+- Minimize mutation and side effects. Favor pure computation over stateful logic.
+
+## Documentation and Comments
+
+- Use JSDoc only when the function’s purpose or constraints are not obvious ([jsdoc-comments.md](jsdoc-comments.md)).
+- Never write comments for what the code is doing.
+- Comment why, not what. Document domain knowledge, design decisions, invariants, code is non-obvious by design, and non-obvious consequences.
+- Comments must age gracefully. Prefer deleting them if no longer essential.
+- Use @link to reference internal constructs meaningfully.
+
+# JavaScript Best Practices
+
+- Use `const` for all variables that aren't reassigned, `let` otherwise
+- Don't use `await` in return statements (return the Promise directly)
+- Always use curly braces for control structures, even for single-line blocks
+- Prefer object spread (e.g. `{ ...args }`) over `Object.assign`
+- Use rest parameters instead of `arguments` object
+- Use template literals instead of string concatenation
+
+# Import Organization
+
+- Keep imports at the top of the file
+- Group imports in this order: `built-in → external → internal → parent → sibling → index → object → type`
+- Add blank lines between import groups
+- Sort imports alphabetically within each group
+- Avoid duplicate imports
+- Avoid circular dependencies
+- Ensure member imports are sorted (e.g., `import { A, B, C } from 'module'`)
+
+# Console Usage
+
+- Console statements are allowed but should be used judiciously
+
+**Keep in Mind**: The code will be parsed using TypeScript compiler with strict type checking enabled and should adhere to modern ECMAScript standards.

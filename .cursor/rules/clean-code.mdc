@@ -1,0 +1,113 @@
+---
+description: Guidelines for writing clean, maintainable, and human-readable code. Apply these rules when writing or reviewing code to ensure consistency and quality.
+globs:
+alwaysApply: true
+---
+
+# Clean Code Guidelines
+
+## Constants Over Magic Numbers
+
+- Replace hard-coded values with named constants
+- Use descriptive constant names that explain the value's purpose
+- Keep constants at the top of the file or in a dedicated constants file
+
+## Meaningful Names
+
+- Variables, functions, and classes should reveal their purpose
+- Names should explain why something exists and how it's used
+- Avoid abbreviations unless they're universally understood
+
+## Control Flow: Flat > Deep
+
+- Prefer guard clauses and early returns to reduce nesting and cognitive load.
+- **Avoid `switch` in application code** for maintainability (diff noise, fallthrough hazards); use lookup tables or strategy maps.
+- **Exception:** Exhaustive matches over _small, stable_ tagged unions are acceptable when enforced by the compiler (see TypeScript rules for a safe pattern).
+- Every path returns or throws—no implicit `undefined`.
+
+```ts
+// Table/strategy over switch:
+const byStatus = {
+  idle: renderIdle,
+  running: renderRunning,
+  done: renderDone,
+} as const;
+
+(byStatus[status] ?? renderUnknown)();
+```
+
+## Smart Comments
+
+- Don't comment on what the code does - make the code self-documenting
+- Use comments to explain why something is done a certain way
+- Document APIs, complex algorithms, and non-obvious side effects
+
+## Single Responsibility
+
+- Each function should do exactly one thing
+- Functions should be small and focused
+- If a function needs a comment to explain what it does, it should be split
+
+## DRY (Don't Repeat Yourself)
+
+- Extract repeated code into reusable functions
+- Share common logic through proper abstraction
+- Maintain single sources of truth
+
+## Clean Structure
+
+- Keep related code together
+- Organize code in a logical hierarchy
+- Use consistent file and folder naming conventions
+
+## Encapsulation
+
+- Hide implementation details
+- Expose clear interfaces
+- Move nested conditionals into well-named functions
+
+## Code Quality Maintenance
+
+- Refactor continuously
+- Fix technical debt early
+- Leave code cleaner than you found it
+
+## Testing
+
+- Write tests before fixing bugs
+- Keep tests readable and maintainable
+- Test edge cases and error conditions
+
+## Version Control
+
+- Write clear commit messages
+- Make small, focused commits
+- Use meaningful branch names
+
+## Core Principles
+
+### Safety
+
+- Make all side effects visible in names or signatures.
+- Model uncertainty explicitly in types.
+- Treat all TypeScript warnings as failures.
+
+### Performance
+
+- Design with **napkin math** up front.
+- Batch I/O. Bound loops. Avoid unnecessary allocations.
+- Predictability beats micro-optimizations.
+
+### Developer Experience
+
+- Your code is part of someone else’s day.
+- Optimize for **reading** and **changing**, not just writing.
+- Don’t be clever. Be clear.
+- Be pragmatic, not dogmatic.
+- Avoid DRY when it hides context or multiplies dependencies.
+
+## Addendum: Zero Technical Debt
+
+- Avoid debt by doing things right the first time.
+- Build systems with the intent to last.
+- Velocity comes from trust, not shortcuts.
