@@ -1,18 +1,31 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import dynamic from "next/dynamic"
 import { useAtomValue, useSetAtom } from "jotai"
+import { useTheme } from "next-themes"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, CheckCircle, Upload, Download } from "lucide-react"
 import { parseYaml, validateSchema } from "@/lib/yaml-utils"
-import { contentAtom, sourceAtom, switchSourceAtom } from "@/lib/state/draft-atoms"
+import { contentAtom, switchSourceAtom } from "@/lib/state/draft-atoms"
 import { createUploadSource } from "@/lib/source-identifier"
 import { useAutosave, useAutosaveFlush } from "@/lib/autosave/autosave-orchestrator"
+import { setupYamlLanguage } from "@/lib/monaco/yaml-setup"
+import type { OnMount } from "@monaco-editor/react"
+
+const Editor = dynamic(() => import("@monaco-editor/react").then((mod) => mod.default), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center" style={{ minHeight: "500px" }}>
+      <div className="text-sm text-muted-foreground">Loading editor...</div>
+    </div>
+  ),
+})
 
 const DEFAULT_DOWNLOAD_FILENAME = "services.yaml"
 const FILE_ACCEPT_TYPES = ".yaml,.yml"
-const MIN_TEXTAREA_HEIGHT = 500
+const MIN_EDITOR_HEIGHT = 500
 
 interface ValidationState {
   readonly valid: true
@@ -26,20 +39,21 @@ interface ValidationError {
 type ValidationResult = ValidationState | ValidationError
 
 export function YamlEditor() {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { theme } = useTheme()
   const content = useAtomValue(contentAtom)
   const setContent = useSetAtom(contentAtom)
   const switchSource = useSetAtom(switchSourceAtom)
   const [validation, setValidation] = useState<ValidationResult>({ valid: true })
-  const [lineNumbers, setLineNumbers] = useState<readonly number[]>([])
+  const [mounted, setMounted] = useState(false)
 
   useAutosave()
   useAutosaveFlush()
 
   useEffect(() => {
-    const lineCount = content.split("\n").length
-    setLineNumbers(Array.from({ length: lineCount }, (_, index) => index + 1))
+    setMounted(true)
+  }, [])
 
+  useEffect(() => {
     try {
       const parsed = parseYaml(content)
       const validationResult = validateSchema(parsed)
@@ -59,6 +73,22 @@ export function YamlEditor() {
       })
     }
   }, [content])
+
+  const handleEditorMount: OnMount = useCallback(
+    (editor, monaco) => {
+      setupYamlLanguage(monaco)
+    },
+    [],
+  )
+
+  const handleEditorChange = useCallback(
+    (value: string | undefined) => {
+      if (value !== undefined) {
+        setContent(value)
+      }
+    },
+    [setContent],
+  )
 
   const handleFileUpload = (event: Event): void => {
     const target = event.target as HTMLInputElement
@@ -99,6 +129,8 @@ export function YamlEditor() {
     input.click()
   }
 
+  const editorTheme = theme === "dark" ? "vs-dark" : "light"
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -130,31 +162,31 @@ export function YamlEditor() {
         </Alert>
       )}
 
-      {/* Editor */}
       <div className="border rounded-md overflow-hidden bg-muted/30">
-        <div className="flex">
-          {/* Line numbers */}
-          <div className="bg-muted/50 px-2 py-2 text-right border-r select-none">
-            {lineNumbers.map((num) => (
-              <div key={num} className="text-xs text-muted-foreground leading-5 font-mono">
-                {num}
-              </div>
-            ))}
-          </div>
-
-          {/* Text area */}
-          <textarea
-            ref={textareaRef}
+        {mounted ? (
+          <Editor
+            height={`${MIN_EDITOR_HEIGHT}px`}
+            language="yaml"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="flex-1 p-2 bg-transparent font-mono text-xs leading-5 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
-            style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px` }}
-            spellCheck={false}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
+            onChange={handleEditorChange}
+            theme={editorTheme}
+            onMount={handleEditorMount}
+            options={{
+              fontSize: 12,
+              minimap: { enabled: false },
+              wordWrap: "on",
+              lineNumbers: "on",
+              suggestOnTriggerCharacters: true,
+              quickSuggestions: true,
+              tabSize: 2,
+              insertSpaces: true,
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              formatOnPaste: true,
+              formatOnType: true,
+            }}
           />
-        </div>
+        ) : null}
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1 bg-muted/30 p-3 rounded-md">

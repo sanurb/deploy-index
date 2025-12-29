@@ -8,30 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-import { parseYaml } from "@/lib/yaml-utils"
+import { parseYaml, type ParsedYaml, type Service, type ServiceInterface } from "@/lib/yaml-utils"
 
 interface ServiceTableProps {
   readonly yamlContent: string
   readonly initialSearchQuery: string | undefined
 }
 
-interface ServiceInterface {
-  readonly domain: string
-  readonly env: string | null
-  readonly branch: string | null
-}
-
-interface Service {
-  readonly name: string
-  readonly owner: string
-  readonly repository: string
-  readonly dependencies: readonly string[]
-  readonly interfaces: readonly ServiceInterface[] | undefined
-}
-
-interface ParsedYaml {
-  readonly services: readonly Service[]
-}
 
 interface FlatServiceRow {
   readonly serviceIndex: number
@@ -90,8 +73,8 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
 
   const flatData = useMemo((): readonly FlatServiceRow[] => {
     try {
-      const parsed = parseYaml(yamlContent) as ParsedYaml
-      const services = parsed.services ?? []
+      const parsed = parseYaml(yamlContent)
+      const services = parsed.services
 
       return services.flatMap((service: Service, serviceIndex: number): readonly FlatServiceRow[] => {
         const baseRow: Omit<FlatServiceRow, "serviceIndex" | "domain" | "env" | "branch"> = {
