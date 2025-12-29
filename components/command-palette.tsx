@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useAtomValue } from "jotai"
 import {
   CommandDialog,
   CommandEmpty,
@@ -11,16 +12,17 @@ import {
 } from "@/components/ui/command"
 import { parseYaml } from "@/lib/yaml-utils"
 import { Globe, Package, User, GitBranch, ExternalLink, FileText } from "lucide-react"
+import { contentAtom } from "@/lib/state/draft-atoms"
 
 interface CommandPaletteProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  yamlContent: string
   onNavigate: (tab: string) => void
   onSearch: (query: string) => void
 }
 
-export function CommandPalette({ open, onOpenChange, yamlContent, onNavigate, onSearch }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: CommandPaletteProps) {
+  const yamlContent = useAtomValue(contentAtom)
   const [searchQuery, setSearchQuery] = useState("")
 
   // Parse services and create searchable index

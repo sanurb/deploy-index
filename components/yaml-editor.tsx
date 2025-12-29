@@ -1,60 +1,102 @@
 "use client"
 
-import type React from "react"
-
 import { useEffect, useRef, useState } from "react"
+import { useAtomValue, useSetAtom } from "jotai"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, CheckCircle, Upload, Download } from "lucide-react"
 import { parseYaml, validateSchema } from "@/lib/yaml-utils"
+import { contentAtom, sourceAtom, switchSourceAtom } from "@/lib/state/draft-atoms"
+import { createUploadSource } from "@/lib/source-identifier"
+import { useAutosave, useAutosaveFlush } from "@/lib/autosave/autosave-orchestrator"
 
-interface YamlEditorProps {
-  value: string
-  onChange: (value: string) => void
+const DEFAULT_DOWNLOAD_FILENAME = "services.yaml"
+const FILE_ACCEPT_TYPES = ".yaml,.yml"
+const MIN_TEXTAREA_HEIGHT = 500
+
+interface ValidationState {
+  readonly valid: true
 }
 
-export function YamlEditor({ value, onChange }: YamlEditorProps) {
+interface ValidationError {
+  readonly valid: false
+  readonly error: string
+}
+
+type ValidationResult = ValidationState | ValidationError
+
+export function YamlEditor() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [validation, setValidation] = useState<{ valid: boolean; error?: string }>({ valid: true })
-  const [lineNumbers, setLineNumbers] = useState<number[]>([])
+  const content = useAtomValue(contentAtom)
+  const setContent = useSetAtom(contentAtom)
+  const switchSource = useSetAtom(switchSourceAtom)
+  const [validation, setValidation] = useState<ValidationResult>({ valid: true })
+  const [lineNumbers, setLineNumbers] = useState<readonly number[]>([])
+
+  useAutosave()
+  useAutosaveFlush()
 
   useEffect(() => {
-    const lines = value.split("\n").length
-    setLineNumbers(Array.from({ length: lines }, (_, i) => i + 1))
+    const lineCount = content.split("\n").length
+    setLineNumbers(Array.from({ length: lineCount }, (_, index) => index + 1))
 
-    // Validate YAML
     try {
-      const parsed = parseYaml(value)
+      const parsed = parseYaml(content)
       const validationResult = validateSchema(parsed)
-      setValidation(validationResult)
+      if (validationResult.valid) {
+        setValidation({ valid: true })
+      } else {
+        setValidation({
+          valid: false,
+          error: validationResult.error ?? "Invalid YAML",
+        })
+      }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Invalid YAML syntax"
       setValidation({
         valid: false,
-        error: error instanceof Error ? error.message : "Invalid YAML syntax",
+        error: errorMessage,
       })
     }
-  }, [value])
+  }, [content])
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const content = e.target?.result as string
-        onChange(content)
-      }
-      reader.readAsText(file)
+  const handleFileUpload = (event: Event): void => {
+    const target = event.target as HTMLInputElement
+    const file = target.files?.[0]
+    if (!file) {
+      return
     }
+
+    const reader = new FileReader()
+    reader.onload = (loadEvent) => {
+      const result = loadEvent.target?.result
+      if (typeof result !== "string") {
+        return
+      }
+
+      const source = createUploadSource(file.name)
+      switchSource(source)
+      setContent(result)
+    }
+    reader.readAsText(file)
   }
 
-  const handleDownload = () => {
-    const blob = new Blob([value], { type: "text/yaml" })
+  const handleDownload = (): void => {
+    const blob = new Blob([content], { type: "text/yaml" })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "services.yaml"
-    a.click()
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = DEFAULT_DOWNLOAD_FILENAME
+    anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleUploadClick = (): void => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = FILE_ACCEPT_TYPES
+    input.addEventListener("change", handleFileUpload)
+    input.click()
   }
 
   return (
@@ -65,18 +107,7 @@ export function YamlEditor({ value, onChange }: YamlEditorProps) {
           <p className="text-xs text-muted-foreground">Edit your service inventory</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const input = document.createElement("input")
-              input.type = "file"
-              input.accept = ".yaml,.yml"
-              input.onchange = handleFileUpload as any
-              input.click()
-            }}
-            className="h-8"
-          >
+          <Button variant="outline" size="sm" onClick={handleUploadClick} className="h-8">
             <Upload className="h-3.5 w-3.5 mr-1.5" />
             Upload
           </Button>
@@ -95,7 +126,7 @@ export function YamlEditor({ value, onChange }: YamlEditorProps) {
       ) : (
         <Alert variant="destructive" className="py-2">
           <AlertCircle className="h-3.5 w-3.5" />
-          <AlertDescription className="text-xs">{validation.error || "Invalid YAML"}</AlertDescription>
+          <AlertDescription className="text-xs">{validation.error}</AlertDescription>
         </Alert>
       )}
 
@@ -114,9 +145,10 @@ export function YamlEditor({ value, onChange }: YamlEditorProps) {
           {/* Text area */}
           <textarea
             ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="flex-1 p-2 bg-transparent font-mono text-xs leading-5 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none min-h-[500px]"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="flex-1 p-2 bg-transparent font-mono text-xs leading-5 focus:outline-none focus:ring-1 focus:ring-primary/20 resize-none"
+            style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px` }}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"

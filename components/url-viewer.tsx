@@ -1,38 +1,43 @@
 "use client"
 
 import { useState } from "react"
+import { useAtomValue, useSetAtom } from "jotai"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ServiceTable } from "@/components/service-table"
 import { Link, AlertCircle, Loader2 } from "lucide-react"
+import { createGitHubSource, normalizeGitHubUrl } from "@/lib/source-identifier"
+import { switchSourceAtom, contentAtom } from "@/lib/state/draft-atoms"
 
 export function UrlViewer() {
   const [url, setUrl] = useState("")
-  const [yamlContent, setYamlContent] = useState("")
+  const yamlContent = useAtomValue(contentAtom)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const switchSource = useSetAtom(switchSourceAtom)
+  const setContent = useSetAtom(contentAtom)
 
   const fetchYamlFromUrl = async () => {
-    if (!url) return
+    if (!url) {
+      return
+    }
 
     setLoading(true)
     setError("")
 
     try {
-      // Convert GitHub URL to raw URL if needed
-      let fetchUrl = url
-      if (url.includes("github.com") && !url.includes("raw.githubusercontent.com")) {
-        fetchUrl = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-      }
+      const source = createGitHubSource(url)
+      await switchSource(source)
 
-      const response = await fetch(fetchUrl)
+      const normalizedUrl = normalizeGitHubUrl(url)
+      const response = await fetch(normalizedUrl)
       if (!response.ok) {
         throw new Error(`Failed to fetch: ${response.statusText}`)
       }
 
       const content = await response.text()
-      setYamlContent(content)
+      setContent(content)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch YAML file")
     } finally {
@@ -108,7 +113,7 @@ export function UrlViewer() {
 
       {yamlContent && (
         <div className="pt-4 border-t">
-          <ServiceTable yamlContent={yamlContent} />
+          <ServiceTable yamlContent={yamlContent} initialSearchQuery="" />
         </div>
       )}
     </div>

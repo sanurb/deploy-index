@@ -1,12 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useAtomValue } from "jotai"
 import { ServiceTable } from "@/components/service-table"
 import { YamlEditor } from "@/components/yaml-editor"
 import { UrlViewer } from "@/components/url-viewer"
 import { CommandPalette } from "@/components/command-palette"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileText, Table, Link } from "lucide-react"
+import { HydrateDrafts } from "@/lib/hydration/hydrate-drafts"
+import { createInlineSource } from "@/lib/source-identifier"
+import { contentAtom } from "@/lib/state/draft-atoms"
 
 const defaultYaml = `# Service Inventory
 # Interface-first schema: each domain maps to env, branch, and service
@@ -58,8 +62,8 @@ services:
     dependencies: ["RabbitMQ", "SendGrid"]
 `
 
-export default function Page() {
-  const [yamlContent, setYamlContent] = useState(defaultYaml)
+function PageContent() {
+  const yamlContent = useAtomValue(contentAtom)
   const [activeTab, setActiveTab] = useState("table")
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [globalSearchQuery, setGlobalSearchQuery] = useState("")
@@ -94,7 +98,6 @@ export default function Page() {
       <CommandPalette
         open={commandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
-        yamlContent={yamlContent}
         onNavigate={(tab) => setActiveTab(tab)}
         onSearch={(query) => {
           setGlobalSearchQuery(query)
@@ -125,7 +128,7 @@ export default function Page() {
           </TabsContent>
 
           <TabsContent value="editor" className="mt-4">
-            <YamlEditor value={yamlContent} onChange={setYamlContent} />
+            <YamlEditor />
           </TabsContent>
 
           <TabsContent value="viewer" className="mt-4">
@@ -134,5 +137,23 @@ export default function Page() {
         </Tabs>
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  const initialSource = createInlineSource()
+
+  return (
+    <HydrateDrafts initialSource={initialSource} initialContent={defaultYaml}>
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          </div>
+        }
+      >
+        <PageContent />
+      </Suspense>
+    </HydrateDrafts>
   )
 }

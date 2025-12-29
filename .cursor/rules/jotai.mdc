@@ -1,0 +1,220 @@
+# Project Context
+
+Jotai enables predictable, composable React state with minimal re-renders, Suspense-friendly async, and an ergonomic developer toolkit. These conventions enforce **strict type safety, maintainable atom graphs, and a consistent DX** for teams.
+
+## Key Principles
+
+* Small, focused atoms; compose behavior with derived and action atoms (typed read/write) for transactional updates.
+* Stable atom identity; never create atoms during render without `useMemo`.
+* Async is first-class: use abortable async atoms via `{ signal }` and Suspense.
+* Prefer a single store; create custom stores only when you need isolation or testing.
+* Migrate with v2 APIs: consolidated imports, no `Provider.initialValues`; hydrate with `useHydrateAtoms`.
+
+## Before Writing Atoms
+
+1. **Map domain state** into primitive atoms; identify derived state and actions (typed write atoms).
+2. **Plan hydration** once per store using `useHydrateAtoms` (SSR/Next.js).
+3. **Decide persistence** up front; centralize storage with `createJSONStorage` and optional validators.
+4. **Place side effects** in explicit effect/write atoms and understand dependency semantics: sync `get` subscribes; async `get` inside timers doesn’t.
+
+
+
+## Rules
+
+### Atom Design
+
+* **One concern per atom.** Keep primitives granular; derive views of state rather than storing duplicates.
+* **Action atoms** (read/write) express domain mutations; co-locate them with the atoms they update for transactional clarity.
+* **Never** create atoms in render unless wrapped with `useMemo([...deps])` to avoid identity churn.
+
+### Derived & Action Atoms
+
+* Derived **reads** are pure and side-effect-free.
+* Use typed **write** signatures for arguments: `(get, set, payload) => void`.
+* When spanning multiple atoms, do it in one write to keep updates atomic (no intermediate re-renders).
+
+### Async & Suspense
+
+* Define async atoms with `atom(async (get, { signal }) => ...)` to auto-cancel stale fetches; render within `<Suspense>`.
+* Remove legacy `abortableAtom`; v2 integrates abort signals into core.
+
+### Lists & Nested State
+
+* Keep arrays in a single atom; render/edit items with list helpers (e.g., split per docs) to minimize re-renders at scale.
+
+### Persistence
+
+* Use `atomWithStorage` + `createJSONStorage` (namespaced keys). Place storage adapters in `/state/persistence/*`.
+* Add light validation with `unstable_withStorageValidator` to protect persisted shape.
+
+### SSR, Hydration & Stores
+
+* Hydrate once per store with a tiny `<HydrateAtoms>` wrapper; don’t rely on removed `Provider.initialValues`.
+* Prefer **one global store**; spin up isolated stores with `createStore()` for portals/tests/embedded widgets.
+
+### Effects (Predictable)
+
+* Express effects with effect utilities or write atoms; **sync `get`** creates subscriptions, **async/timer `get`** doesn’t—keep dependencies explicit.
+
+### Imports & Migration (v2)
+
+* Prefer consolidated `import { atom, useAtom } from 'jotai'`; path imports remain available (tree-shaking in non-ESM).
+
+### Debuggability (DevTools)
+
+* Mount DevTools provider-less or bound to a custom store; enable debug labels via SWC/Babel presets.
+
+### Testing
+
+* Hydrate controlled initial values in tests with `useHydrateAtoms` + `<Provider>`. Keep tests deterministic and UI-free when possible (store-level tests).
+
+
+
+## Common Tasks
+
+* **Enable Babel preset for hot-reload + debug labels**
+
+  ```json
+  {
+    "presets": [
+      "jotai/babel/preset"
+    ]
+  }
+  ```
+
+
+
+* **Add SWC debug labels (if using SWC)**
+
+  ```json
+  {
+    "jsc": {
+      "experimental": {
+        "plugins": [["@swc-jotai/debug-label", {}]]
+      }
+    }
+  }
+  ```
+
+
+
+* **DevTools (provider-less)**
+
+  ```tsx
+  import { DevTools } from 'jotai-devtools'
+  import 'jotai-devtools/styles.css'
+
+  export const App = () => (
+    <>
+      <DevTools />
+      {/* app */}
+    </>
+  )
+  ```
+
+
+
+
+
+## Examples
+
+### 1) Action Atom (Transactional Updates)
+
+```ts
+// ✅ Good: typed action atom co-located with domain atoms
+import { atom } from 'jotai'
+export const itemsAtom = atom<{ id: string; qty: number }[]>([])
+
+export const addItemAtom = atom(
+  null,
+  (get, set, item: { id: string; qty: number }) => {
+    const items = get(itemsAtom)
+    const next = [...items.filter(i => i.id !== item.id), item]
+    set(itemsAtom, next)
+  }
+)
+```
+
+*(Uses typed write signature per Jotai’s read/write atom API.)*
+
+```ts
+// ❌ Bad: mutating external module state; no transactional boundary
+let _items: { id: string; qty: number }[] = []
+export const addItem = (item: { id: string; qty: number }) => {
+  _items.push(item) // breaks atom graph & time-travel/debuggability
+}
+```
+
+### 2) Hydration (SSR/Next.js)
+
+```tsx
+// ✅ Good: one-pass hydration with useHydrateAtoms
+import { atom, Provider } from 'jotai'
+import { useHydrateAtoms } from 'jotai/utils'
+
+export const countAtom = atom(0)
+
+const HydrateAtoms = ({ initialValues, children }:{
+  initialValues: Parameters<typeof useHydrateAtoms>[0]
+  children: React.ReactNode
+}) => {
+  useHydrateAtoms(initialValues)
+  return children
+}
+
+export const App = ({ serverCount }: { serverCount: number }) => (
+  <Provider>
+    <HydrateAtoms initialValues={[[countAtom, serverCount]]}>
+      {/* app */}
+    </HydrateAtoms>
+  </Provider>
+)
+```
+
+*(Replaces removed `Provider.initialValues` in v2.)*
+
+```tsx
+// ❌ Bad: relying on Provider.initialValues (removed in v2)
+<Provider initialValues={[[countAtom, 1]]}>{/* ... */}</Provider>
+```
+
+### 3) Abortable Async Atom
+
+```ts
+// ✅ Good: abort-aware async atom (stale requests auto-cancel)
+import { atom } from 'jotai'
+export const userIdAtom = atom(1)
+export const userAtom = atom(async (get, { signal }) => {
+  const id = get(userIdAtom)
+  const res = await fetch(`/api/users/${id}`, { signal })
+  return res.json()
+})
+```
+
+*(Built-in abort signal replaces legacy utilities.)*
+
+### 4) Storage with Validation
+
+```ts
+// ✅ Good: namespaced key + JSON storage + schema guard
+import { atomWithStorage, createJSONStorage, unstable_withStorageValidator as withStorageValidator } from 'jotai/utils'
+import { z } from 'zod'
+
+const storage = withStorageValidator((v: unknown) => z.number().int().nonnegative().safeParse(v).success)(
+  createJSONStorage()
+)
+export const scoreAtom = atomWithStorage('app:score', 0, storage)
+```
+
+
+
+
+
+## Testing Best Practices
+
+* Inject initial values via `useHydrateAtoms` inside a test-specific `<Provider>`. Keep tests deterministic and focused on state transitions.
+
+## Next.js Notes
+
+* Hydrate once on the client with server-provided values; keep atoms framework-agnostic.
+* Prefer one app-level store; create additional stores explicitly for embedded islands or tests.
