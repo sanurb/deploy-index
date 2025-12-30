@@ -20,7 +20,7 @@ import {
 import { atom, useAtom } from "jotai"
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react"
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react"
-import { createContext, memo, useCallback, useContext, useEffect, useRef } from "react"
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -205,7 +205,9 @@ export const TableHeaderGroup = ({ headerGroup, children }: TableHeaderGroupProp
       className="h-9 border-b dark:border-white/5 border-black/10"
       style={gridStyle}
     >
-      {headerGroup.headers.map((header) => children({ header }))}
+      {headerGroup.headers.map((header) => (
+        <Fragment key={header.id}>{children({ header })}</Fragment>
+      ))}
     </div>
   )
 }
@@ -220,7 +222,9 @@ export const TableHeader = ({ className, children }: TableHeaderProps) => {
 
   return (
     <div role="rowgroup" className={cn(className)}>
-      {table?.getHeaderGroups().map((headerGroup) => children({ headerGroup }))}
+      {table?.getHeaderGroups().map((headerGroup) => (
+        <Fragment key={headerGroup.id}>{children({ headerGroup })}</Fragment>
+      ))}
     </div>
   )
 }
@@ -361,7 +365,9 @@ export const TableRow = memo(({ row, rowIndex, children, className }: TableRowPr
           aria-hidden="true"
         />
       )}
-      {row.getVisibleCells().map((cell) => children({ cell }))}
+      {row.getVisibleCells().map((cell) => (
+        <Fragment key={cell.id}>{children({ cell })}</Fragment>
+      ))}
     </div>
   )
 })
@@ -380,7 +386,9 @@ export const TableBody = ({ children, className }: TableBodyProps) => {
   return (
     <div role="rowgroup" className={cn(className)}>
       {rows?.length ? (
-        rows.map((row, index) => children({ row, rowIndex: index }))
+        rows.map((row, index) => (
+          <Fragment key={row.id}>{children({ row, rowIndex: index })}</Fragment>
+        ))
       ) : (
         <div className="flex items-center justify-center h-24 text-[11px] text-muted-foreground">
           No results.
