@@ -1,9 +1,17 @@
 import type { Simplify } from "type-fest"
 
+export type RuntimeType = "ec2" | "vm" | "k8s" | "lambda" | "container" | "paas" | "unknown"
+
+export interface RuntimeLocator {
+  readonly type: RuntimeType
+  readonly id: string
+}
+
 export interface ServiceInterface {
   readonly domain: string
   readonly env: string | null
   readonly branch: string | null
+  readonly runtime: RuntimeLocator | null
 }
 
 export interface Service {
@@ -33,6 +41,7 @@ interface InterfaceBuilder {
   domain?: string
   env?: string | null
   branch?: string | null
+  runtime?: RuntimeLocator | null
 }
 
 interface ServiceBuilder {
@@ -49,6 +58,8 @@ interface ParseContext {
   readonly currentInterface: InterfaceBuilder | null
   readonly inInterfacesArray: boolean
   readonly inDependenciesArray: boolean
+  readonly inRuntimeBlock: boolean
+  readonly runtimeIndentLevel: number
   readonly services: Service[]
   readonly dependencies: string[]
 }
@@ -138,6 +149,8 @@ function finishCurrentService(context: ParseContext): ParseContext {
     currentInterface: null,
     inInterfacesArray: false,
     inDependenciesArray: false,
+    inRuntimeBlock: false,
+    runtimeIndentLevel: 0,
     dependencies: [],
   }
 }
@@ -147,10 +160,22 @@ function finishCurrentInterface(context: ParseContext): ParseContext {
     return context
   }
 
+  let runtime: RuntimeLocator | null = null
+  if (context.currentInterface.runtime) {
+    const rt = context.currentInterface.runtime
+    if (rt.id && rt.id.trim().length > 0) {
+      runtime = {
+        type: rt.type ?? "unknown",
+        id: rt.id,
+      }
+    }
+  }
+
   const serviceInterface: ServiceInterface = {
     domain: context.currentInterface.domain,
     env: context.currentInterface.env ?? null,
     branch: context.currentInterface.branch ?? null,
+    runtime,
   }
 
   const interfaces = context.currentService.interfaces ? [...context.currentService.interfaces, serviceInterface] : [serviceInterface]
@@ -204,6 +229,47 @@ function handleKeyValue(line: string, context: ParseContext, indentLevel: number
   if (context.inInterfacesArray && context.currentInterface && indentLevel > context.indentLevel) {
     const parsedValue = parseQuotedValue(value)
 
+    if (key === "runtime" && isArrayStart(value)) {
+      return {
+        ...context,
+        inRuntimeBlock: true,
+        runtimeIndentLevel: indentLevel,
+      }
+    }
+
+    if (context.inRuntimeBlock && indentLevel > context.runtimeIndentLevel) {
+      const currentRuntime = context.currentInterface.runtime ?? { type: "unknown" as RuntimeType, id: "" }
+      
+      if (key === "type") {
+        const runtimeType = parsedValue.toLowerCase() as RuntimeType
+        const validTypes: readonly RuntimeType[] = ["ec2", "vm", "k8s", "lambda", "container", "paas", "unknown"]
+        const normalizedType = validTypes.includes(runtimeType) ? runtimeType : "unknown"
+        return {
+          ...context,
+          currentInterface: {
+            ...context.currentInterface,
+            runtime: {
+              ...currentRuntime,
+              type: normalizedType,
+            },
+          },
+        }
+      }
+
+      if (key === "id") {
+        return {
+          ...context,
+          currentInterface: {
+            ...context.currentInterface,
+            runtime: {
+              ...currentRuntime,
+              id: parsedValue,
+            },
+          },
+        }
+      }
+    }
+
     if (key === "domain") {
       return {
         ...context,
@@ -211,6 +277,8 @@ function handleKeyValue(line: string, context: ParseContext, indentLevel: number
           ...context.currentInterface,
           domain: parsedValue,
         },
+        inRuntimeBlock: false,
+        runtimeIndentLevel: 0,
       }
     }
 
@@ -221,6 +289,8 @@ function handleKeyValue(line: string, context: ParseContext, indentLevel: number
           ...context.currentInterface,
           env: parsedValue,
         },
+        inRuntimeBlock: false,
+        runtimeIndentLevel: 0,
       }
     }
 
@@ -231,6 +301,8 @@ function handleKeyValue(line: string, context: ParseContext, indentLevel: number
           ...context.currentInterface,
           branch: parsedValue,
         },
+        inRuntimeBlock: false,
+        runtimeIndentLevel: 0,
       }
     }
   }
@@ -329,6 +401,8 @@ export function parseYaml(yamlString: string): ParsedYaml {
     currentInterface: null,
     inInterfacesArray: false,
     inDependenciesArray: false,
+    inRuntimeBlock: false,
+    runtimeIndentLevel: 0,
     services: [],
     dependencies: [],
   }
@@ -368,12 +442,16 @@ export function parseYaml(yamlString: string): ParsedYaml {
           ...newContext,
           currentInterface: newInterface,
           indentLevel,
+          inRuntimeBlock: false,
+          runtimeIndentLevel: 0,
         }
       } else {
         context = {
           ...newContext,
           currentInterface: {},
           indentLevel,
+          inRuntimeBlock: false,
+          runtimeIndentLevel: 0,
         }
       }
       continue
@@ -469,6 +547,34 @@ export function validateSchema(data: unknown): ValidationResult {
           return {
             valid: false,
               error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid env. Must be one of: ${validEnvs.join(", ")}`,
+            }
+          }
+        }
+
+        if (ifaceObj.runtime !== undefined && ifaceObj.runtime !== null) {
+          if (typeof ifaceObj.runtime !== "object") {
+            return {
+              valid: false,
+              error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" runtime must be an object`,
+            }
+          }
+
+          const runtimeObj = ifaceObj.runtime as Record<string, unknown>
+          const validRuntimeTypes = ["ec2", "vm", "k8s", "lambda", "container", "paas", "unknown"]
+          
+          if (runtimeObj.type !== undefined) {
+            if (typeof runtimeObj.type !== "string" || !validRuntimeTypes.includes(runtimeObj.type)) {
+              return {
+                valid: false,
+                error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid runtime.type. Must be one of: ${validRuntimeTypes.join(", ")}`,
+              }
+            }
+          }
+
+          if (runtimeObj.id !== undefined && typeof runtimeObj.id !== "string") {
+            return {
+              valid: false,
+              error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" runtime.id must be a string`,
             }
           }
         }

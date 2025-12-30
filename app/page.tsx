@@ -13,7 +13,7 @@ import { createInlineSource } from "@/lib/source-identifier"
 import { contentAtom } from "@/lib/state/draft-atoms"
 
 const defaultYaml = `# Service Inventory
-# Interface-first schema: each domain maps to env, branch, and service
+# Interface-first schema: each domain maps to env, branch, runtime, and service
 
 services:
   - name: "User API"
@@ -23,9 +23,15 @@ services:
       - domain: "api.example.com"
         env: "production"
         branch: "main"
+        runtime:
+          type: "ec2"
+          id: "i-0abc123def4567890"
       - domain: "api-staging.example.com"
         env: "staging"
         branch: "staging"
+        runtime:
+          type: "k8s"
+          id: "eks-staging/api-service"
     dependencies: ["PostgreSQL", "Redis"]
     
   - name: "Payment Service"
@@ -35,6 +41,9 @@ services:
       - domain: "payments.example.com"
         env: "production"
         branch: "main"
+        runtime:
+          type: "lambda"
+          id: "payments-api-prod"
       - domain: "payments-dev.example.com"
         env: "development"
         branch: "develop"
@@ -47,6 +56,9 @@ services:
       - domain: "analytics.example.com"
         env: "production"
         branch: "main"
+        runtime:
+          type: "paas"
+          id: "heroku-analytics-prod"
       - domain: "analytics-staging.example.com"
         env: "staging"
         branch: "staging"
@@ -59,6 +71,9 @@ services:
       - domain: "queue.internal.example.com"
         env: "production"
         branch: "main"
+        runtime:
+          type: "vm"
+          id: "vm-email-queue-01"
     dependencies: ["RabbitMQ", "SendGrid"]
 `
 

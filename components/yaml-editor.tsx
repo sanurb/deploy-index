@@ -202,16 +202,25 @@ export function YamlEditor() {
             • <span className="text-foreground">repository</span>: URL string
           </div>
           <div>
-            • <span className="text-foreground">interfaces</span>: array (domain, env, branch mappings)
+            • <span className="text-foreground">interfaces</span>: array (domain, env, branch, runtime mappings)
           </div>
           <div className="ml-4">
-            - <span className="text-foreground">domain</span>: string (DNS name)
+            - <span className="text-foreground">domain</span>: string (DNS name, required)
           </div>
           <div className="ml-4">
             - <span className="text-foreground">env</span>: production | staging | development
           </div>
           <div className="ml-4">
             - <span className="text-foreground">branch</span>: string (git branch)
+          </div>
+          <div className="ml-4">
+            - <span className="text-foreground">runtime</span>: object (optional)
+          </div>
+          <div className="ml-8">
+            - <span className="text-foreground">type</span>: ec2 | vm | k8s | lambda | container | paas | unknown
+          </div>
+          <div className="ml-8">
+            - <span className="text-foreground">id</span>: string (runtime identifier)
           </div>
           <div>
             • <span className="text-foreground">dependencies</span>: array of strings

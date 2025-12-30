@@ -1,7 +1,7 @@
 "use client"
 
 import { Fragment, useState, useMemo, useEffect, useCallback } from "react"
-import { ChevronDown, ChevronRight, Copy, Download, ExternalLink, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, Copy, Download, ExternalLink, Search, Terminal } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,8 @@ interface FlatServiceRow {
   readonly domain: string | null
   readonly env: string | null
   readonly branch: string | null
+  readonly runtimeType: string | null
+  readonly runtimeId: string | null
 }
 
 interface ScoredRow extends FlatServiceRow {
@@ -44,7 +46,7 @@ const SEARCH_SCORE_WEIGHTS = {
 
 const INTERFACE_INDEX_MULTIPLIER = 1000
 
-const CSV_HEADERS = ["Domain", "Service", "Environment", "Branch", "Owner", "Repository"] as const
+const CSV_HEADERS = ["Domain", "Service", "Environment", "Branch", "Runtime Type", "Runtime ID", "Owner", "Repository"] as const
 
 const ENV_COLOR_MAP = {
   production: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400",
@@ -77,7 +79,7 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
       const services = parsed.services
 
       return services.flatMap((service: Service, serviceIndex: number): readonly FlatServiceRow[] => {
-        const baseRow: Omit<FlatServiceRow, "serviceIndex" | "domain" | "env" | "branch"> = {
+        const baseRow: Omit<FlatServiceRow, "serviceIndex" | "domain" | "env" | "branch" | "runtimeType" | "runtimeId"> = {
           serviceName: service.name,
           owner: service.owner,
           repository: service.repository,
@@ -92,6 +94,8 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
               domain: null,
               env: null,
               branch: null,
+              runtimeType: null,
+              runtimeId: null,
             },
           ]
         }
@@ -103,6 +107,8 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
             domain: iface.domain,
             env: iface.env ?? null,
             branch: iface.branch ?? null,
+            runtimeType: iface.runtime?.type ?? null,
+            runtimeId: iface.runtime?.id ?? null,
           }),
         )
       })
@@ -160,6 +166,8 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
       row.serviceName ?? "",
       row.env ?? "—",
       row.branch ?? "—",
+      row.runtimeType ?? "—",
+      row.runtimeId ?? "—",
       row.owner ?? "",
       row.repository ?? "",
     ])
@@ -261,13 +269,14 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
               <TableHead className="font-medium">Service</TableHead>
               <TableHead className="font-medium">Environment</TableHead>
               <TableHead className="font-medium">Branch</TableHead>
+              <TableHead className="font-medium">Runtime</TableHead>
               <TableHead className="font-medium">Owner</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {interfaceCount === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
                   No interfaces found
                 </TableCell>
               </TableRow>
@@ -333,11 +342,27 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
                           <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {row.runtimeType ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-xs font-mono">
+                              {row.runtimeType}
+                            </Badge>
+                            {row.runtimeId && (
+                              <code className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                                {row.runtimeId.length > 12 ? `${row.runtimeId.slice(0, 12)}...` : row.runtimeId}
+                              </code>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{row.owner}</TableCell>
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={expandedKey} className="bg-muted/20">
-                        <TableCell colSpan={6} className="py-3 px-4">
+                        <TableCell colSpan={7} className="py-3 px-4">
                           <div className="space-y-2 text-sm">
                             <div className="flex items-start gap-8">
                               <div>
@@ -368,6 +393,70 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
                                         {dep}
                                       </span>
                                     ))}
+                                  </div>
+                                </div>
+                              )}
+                              {row.runtimeType && (
+                                <div>
+                                  <div className="text-xs font-medium text-muted-foreground mb-1">Runtime</div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="text-xs font-mono">
+                                        {row.runtimeType}
+                                      </Badge>
+                                      {row.runtimeId && (
+                                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                                          {row.runtimeId}
+                                        </code>
+                                      )}
+                                    </div>
+                                    {row.runtimeId && (
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            void navigator.clipboard.writeText(row.runtimeId ?? "")
+                                          }}
+                                          className="h-6 text-xs"
+                                        >
+                                          <Copy className="h-3 w-3 mr-1" />
+                                          Copy ID
+                                        </Button>
+                                        {row.runtimeType === "ec2" && row.runtimeId && row.runtimeId.startsWith("i-") && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                              const url = `https://console.aws.amazon.com/systems-manager/session-manager/${row.runtimeId}`
+                                              window.open(url, "_blank", "noopener,noreferrer")
+                                            }}
+                                            className="h-6 text-xs"
+                                          >
+                                            <Terminal className="h-3 w-3 mr-1" />
+                                            Open SSM
+                                          </Button>
+                                        )}
+                                        {row.runtimeType === "k8s" && row.runtimeId && row.runtimeId.includes("/") && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                              const [cluster, namespace] = row.runtimeId!.split("/")
+                                              const hint = `kubectl --context ${cluster} -n ${namespace} get pods`
+                                              void navigator.clipboard.writeText(hint)
+                                            }}
+                                            className="h-6 text-xs"
+                                          >
+                                            <Terminal className="h-3 w-3 mr-1" />
+                                            Copy kubectl hint
+                                          </Button>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               )}
