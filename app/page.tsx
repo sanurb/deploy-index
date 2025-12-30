@@ -11,6 +11,7 @@ import { FileText, Table, Link } from "lucide-react"
 import { HydrateDrafts } from "@/lib/hydration/hydrate-drafts"
 import { createInlineSource } from "@/lib/source-identifier"
 import { contentAtom } from "@/lib/state/draft-atoms"
+import ModeToggle from "@/components/animations/mode-toggle"
 
 const defaultYaml = `# Service Inventory
 # Interface-first schema: each domain maps to env, branch, runtime, and service
@@ -106,6 +107,7 @@ function PageContent() {
                 <span className="text-xs">⌘</span>K
               </kbd>
             </div>
+            <ModeToggle />
           </div>
         </div>
       </header>

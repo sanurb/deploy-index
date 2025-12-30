@@ -1,179 +1,498 @@
 "use client"
 
-import { Fragment, useState, useMemo, useEffect, useCallback } from "react"
-import { ChevronDown, ChevronRight, Copy, Download, ExternalLink, Search, Terminal } from "lucide-react"
+import { memo, useState, useMemo, useEffect, useCallback, useRef } from "react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { Copy, Download, ExternalLink, Search, Terminal } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
-import { parseYaml, type ParsedYaml, type Service, type ServiceInterface } from "@/lib/yaml-utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  TableProvider,
+  TableHeader,
+  TableHeaderGroup,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@/components/kibo-ui/table"
+import { parseYaml, type Service } from "@/lib/yaml-utils"
 
 interface ServiceTableProps {
   readonly yamlContent: string
   readonly initialSearchQuery: string | undefined
 }
 
-
-interface FlatServiceRow {
-  readonly serviceIndex: number
-  readonly serviceName: string
-  readonly owner: string
-  readonly repository: string
-  readonly dependencies: readonly string[]
-  readonly domain: string | null
-  readonly env: string | null
+interface EnvironmentInfo {
+  readonly env: "production" | "staging" | "development"
+  readonly domain: string
   readonly branch: string | null
   readonly runtimeType: string | null
   readonly runtimeId: string | null
 }
 
-interface ScoredRow extends FlatServiceRow {
-  readonly score: number
+interface GroupedService {
+  readonly serviceIndex: number
+  readonly name: string
+  readonly owner: string
+  readonly repository: string
+  readonly dependencies: readonly string[]
+  readonly environments: readonly EnvironmentInfo[]
+  readonly domainsCount: number
+  readonly runtimeFootprint: readonly string[]
 }
 
-type Environment = "production" | "staging" | "development"
+const ENV_ORDER: readonly ["production", "staging", "development"] = ["production", "staging", "development"]
 
-const SEARCH_SCORE_WEIGHTS = {
-  DOMAIN_EXACT: 150,
-  DOMAIN_PARTIAL: 100,
-  SERVICE_NAME: 50,
-  BRANCH: 30,
-  OWNER: 20,
-  ENV: 10,
+const ENV_LABELS = {
+  production: "PROD",
+  staging: "STAGE",
+  development: "DEV",
 } as const
 
-const INTERFACE_INDEX_MULTIPLIER = 1000
-
-const CSV_HEADERS = ["Domain", "Service", "Environment", "Branch", "Runtime Type", "Runtime ID", "Owner", "Repository"] as const
-
-const ENV_COLOR_MAP = {
-  production: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400",
-  staging: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-400",
-  development: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400",
+const RUNTIME_LABELS: Record<string, string> = {
+  ec2: "EC2",
+  vm: "VM",
+  k8s: "K8S",
+  lambda: "λ",
+  container: "CTR",
+  paas: "PAAS",
 } as const
 
-const DEFAULT_ENV_COLOR = "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400"
+/** 
+ * Single source of truth for column layout.
+ * Used by both header and body rows via CSS Grid.
+ */
+const GRID_TEMPLATE = "minmax(180px, 1fr) 140px 110px 90px minmax(120px, 150px) 72px"
 
-const getEnvColor = (env: string | null): string => {
-  if (!env) {
-    return DEFAULT_ENV_COLOR
+function normalizeEnv(env: string | null): "production" | "staging" | "development" | null {
+  if (!env) return null
+  const normalized = env.toLowerCase()
+  if (normalized === "production" || normalized === "prod") return "production"
+  if (normalized === "staging" || normalized === "stage") return "staging"
+  if (normalized === "development" || normalized === "dev") return "development"
+  return null
+}
+
+function sortEnvironments(envs: readonly EnvironmentInfo[]): readonly EnvironmentInfo[] {
+  return [...envs].sort((a, b) => ENV_ORDER.indexOf(a.env) - ENV_ORDER.indexOf(b.env))
+}
+
+function computeRuntimeFootprint(environments: readonly EnvironmentInfo[]): readonly string[] {
+  const types = new Set<string>()
+  for (const env of environments) {
+    if (env.runtimeType) types.add(env.runtimeType)
+  }
+  return Array.from(types).sort()
+}
+
+function groupServicesByService(services: readonly Service[]): readonly GroupedService[] {
+  return services.map((service, serviceIndex) => {
+    const environments: EnvironmentInfo[] = []
+
+    if (service.interfaces && service.interfaces.length > 0) {
+      for (const iface of service.interfaces) {
+        const normalizedEnv = normalizeEnv(iface.env)
+        if (normalizedEnv && iface.domain) {
+          environments.push({
+            env: normalizedEnv,
+            domain: iface.domain,
+            branch: iface.branch ?? null,
+            runtimeType: iface.runtime?.type ?? null,
+            runtimeId: iface.runtime?.id ?? null,
+          })
+        }
+      }
+    }
+
+    const sortedEnvs = sortEnvironments(environments)
+
+    return {
+      serviceIndex,
+      name: service.name,
+      owner: service.owner,
+      repository: service.repository,
+      dependencies: service.dependencies ?? [],
+      environments: sortedEnvs,
+      domainsCount: sortedEnvs.length,
+      runtimeFootprint: computeRuntimeFootprint(sortedEnvs),
+    }
+  })
+}
+
+function calculateSearchScore(service: GroupedService, query: string): number {
+  const lowerQuery = query.toLowerCase()
+  let score = 0
+
+  if (service.name.toLowerCase().includes(lowerQuery)) score += 100
+  if (service.owner.toLowerCase().includes(lowerQuery)) score += 50
+
+  for (const env of service.environments) {
+    if (env.domain.toLowerCase().includes(lowerQuery)) score += 150
+    if (env.branch?.toLowerCase().includes(lowerQuery)) score += 30
+    if (env.env === lowerQuery || ENV_LABELS[env.env].toLowerCase() === lowerQuery) score += 20
+    if (env.runtimeType?.toLowerCase().includes(lowerQuery)) score += 25
   }
 
-  const normalizedEnv = env.toLowerCase() as Environment
-  return ENV_COLOR_MAP[normalizedEnv] ?? DEFAULT_ENV_COLOR
+  return score
 }
+
+/**
+ * ENV badges - stable wrapper with consistent height
+ */
+interface EnvBadgesProps {
+  readonly environments: readonly EnvironmentInfo[]
+}
+
+const EnvBadges = memo(function EnvBadges({ environments }: EnvBadgesProps) {
+  const uniqueEnvs = [...new Set(environments.map((e) => e.env))]
+  const sortedEnvs = uniqueEnvs.sort((a, b) => ENV_ORDER.indexOf(a) - ENV_ORDER.indexOf(b))
+
+  return (
+    <div className="flex items-center gap-1.5 h-5">
+      {sortedEnvs.length === 0 ? (
+        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+      ) : (
+        sortedEnvs.map((env) => (
+          <div key={env} className="inline-flex items-center gap-1">
+            {env === "production" && (
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" aria-label="Production" />
+            )}
+            <span className="text-[11px] font-mono text-muted-foreground/80 uppercase tracking-wide leading-none">
+              {ENV_LABELS[env]}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  )
+})
+
+/**
+ * Domains affordance - clickable with popover
+ */
+interface DomainsAffordanceProps {
+  readonly environments: readonly EnvironmentInfo[]
+  readonly domainsCount: number
+}
+
+const DomainsAffordance = memo(function DomainsAffordance({ environments, domainsCount }: DomainsAffordanceProps) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  const handleCopyDomain = useCallback((domain: string) => {
+    void navigator.clipboard.writeText(domain)
+    setIsOpen(false)
+  }, [])
+
+  return (
+    <div className="flex items-center h-5">
+      {domainsCount === 0 ? (
+        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+      ) : (
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="text-[11px] font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/30 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm leading-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {domainsCount} {domainsCount === 1 ? "domain" : "domains"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-80 p-2 dark:border-white/10 border-black/10"
+            side="bottom"
+            align="start"
+            sideOffset={4}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              {environments.map((env, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 p-1.5 rounded hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="inline-flex items-center gap-1 shrink-0 w-14">
+                      {env.env === "production" && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      )}
+                      <span className="text-[10px] font-mono text-muted-foreground/60 uppercase">
+                        {ENV_LABELS[env.env]}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-foreground truncate">{env.domain}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyDomain(env.domain)}
+                    className="p-1 hover:bg-muted rounded transition-colors shrink-0 opacity-60 hover:opacity-100"
+                    aria-label={`Copy ${env.domain}`}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  )
+})
+
+/**
+ * Runtime footprint - stable wrapper
+ */
+interface RuntimeFootprintProps {
+  readonly runtimeFootprint: readonly string[]
+}
+
+const RuntimeFootprint = memo(function RuntimeFootprint({ runtimeFootprint }: RuntimeFootprintProps) {
+  const display = runtimeFootprint.length > 0
+    ? runtimeFootprint.map((rt) => RUNTIME_LABELS[rt] ?? rt.toUpperCase()).join("·")
+    : null
+
+  return (
+    <div className="flex items-center h-5">
+      {display ? (
+        <span className="text-[11px] font-mono text-muted-foreground/70 leading-none">{display}</span>
+      ) : (
+        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+      )}
+    </div>
+  )
+})
+
+/**
+ * Row actions - always present, opacity changes on hover
+ */
+interface RowActionsProps {
+  readonly service: GroupedService
+}
+
+const RowActions = memo(function RowActions({ service }: RowActionsProps) {
+  const handleCopyPrimaryDomain = useCallback(() => {
+    const primaryEnv = service.environments.find((e) => e.env === "production") ?? service.environments[0]
+    if (primaryEnv) {
+      void navigator.clipboard.writeText(primaryEnv.domain)
+    }
+  }, [service.environments])
+
+  const handleOpenRepository = useCallback(() => {
+    if (service.repository) {
+      window.open(service.repository, "_blank", "noopener,noreferrer")
+    }
+  }, [service.repository])
+
+  const handleRuntimeAction = useCallback(() => {
+    const runtimeEnv = service.environments.find((e) => e.runtimeType && e.runtimeId)
+    if (!runtimeEnv || !runtimeEnv.runtimeId) return
+
+    if (runtimeEnv.runtimeType === "ec2" && runtimeEnv.runtimeId.startsWith("i-")) {
+      const url = `https://console.aws.amazon.com/systems-manager/session-manager/${runtimeEnv.runtimeId}`
+      window.open(url, "_blank", "noopener,noreferrer")
+    } else if (runtimeEnv.runtimeType === "k8s" && runtimeEnv.runtimeId.includes("/")) {
+      const [cluster, namespace] = runtimeEnv.runtimeId.split("/")
+      const hint = `kubectl --context ${cluster} -n ${namespace} get pods`
+      void navigator.clipboard.writeText(hint)
+    }
+  }, [service.environments])
+
+  const hasRuntimeAction = service.environments.some(
+    (e) =>
+      e.runtimeType &&
+      e.runtimeId &&
+      ((e.runtimeType === "ec2" && e.runtimeId.startsWith("i-")) ||
+        (e.runtimeType === "k8s" && e.runtimeId.includes("/"))),
+  )
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      {/* Fixed-size container - always present, only opacity changes */}
+      <div className="flex items-center justify-end gap-0.5 h-5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
+        {service.repository && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleOpenRepository()
+                }}
+                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="View repository"
+              >
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">View</TooltipContent>
+          </Tooltip>
+        )}
+        {service.domainsCount > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCopyPrimaryDomain()
+                }}
+                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Copy primary domain"
+              >
+                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">Copy</TooltipContent>
+          </Tooltip>
+        )}
+        {hasRuntimeAction && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleRuntimeAction()
+                }}
+                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Open runtime"
+              >
+                <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">Runtime</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </TooltipProvider>
+  )
+})
+
+const columns: ColumnDef<GroupedService>[] = [
+  {
+    id: "name",
+    accessorKey: "name",
+    header: () => <span>Service</span>,
+    cell: ({ row }) => (
+      <div className="flex items-center h-5">
+        <span className="text-[13px] font-medium text-foreground leading-none truncate">
+          {row.original.name}
+        </span>
+      </div>
+    ),
+  },
+  {
+    id: "environments",
+    header: () => <span>Env</span>,
+    cell: ({ row }) => <EnvBadges environments={row.original.environments} />,
+  },
+  {
+    id: "domains",
+    header: () => <span>Domains</span>,
+    cell: ({ row }) => (
+      <DomainsAffordance
+        environments={row.original.environments}
+        domainsCount={row.original.domainsCount}
+      />
+    ),
+  },
+  {
+    id: "runtime",
+    header: () => <span>Runtime</span>,
+    cell: ({ row }) => <RuntimeFootprint runtimeFootprint={row.original.runtimeFootprint} />,
+  },
+  {
+    id: "owner",
+    accessorKey: "owner",
+    header: () => <span>Owner</span>,
+    cell: ({ row }) => (
+      <div className="flex items-center h-5">
+        <span className="text-[11px] text-muted-foreground/80 truncate leading-none">
+          {row.original.owner}
+        </span>
+      </div>
+    ),
+  },
+  {
+    id: "actions",
+    header: () => null,
+    cell: ({ row }) => <RowActions service={row.original} />,
+  },
+]
 
 export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTableProps) {
   const [searchTerm, setSearchTerm] = useState(initialSearchQuery)
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setSearchTerm(initialSearchQuery)
   }, [initialSearchQuery])
 
-  const flatData = useMemo((): readonly FlatServiceRow[] => {
+  const groupedServices = useMemo(() => {
     try {
       const parsed = parseYaml(yamlContent)
-      const services = parsed.services
-
-      return services.flatMap((service: Service, serviceIndex: number): readonly FlatServiceRow[] => {
-        const baseRow: Omit<FlatServiceRow, "serviceIndex" | "domain" | "env" | "branch" | "runtimeType" | "runtimeId"> = {
-          serviceName: service.name,
-          owner: service.owner,
-          repository: service.repository,
-          dependencies: service.dependencies ?? [],
-        }
-
-        if (!service.interfaces || service.interfaces.length === 0) {
-          return [
-            {
-              ...baseRow,
-              serviceIndex,
-              domain: null,
-              env: null,
-              branch: null,
-              runtimeType: null,
-              runtimeId: null,
-            },
-          ]
-        }
-
-        return service.interfaces.map(
-          (iface: ServiceInterface, ifaceIndex: number): FlatServiceRow => ({
-            ...baseRow,
-            serviceIndex: serviceIndex * INTERFACE_INDEX_MULTIPLIER + ifaceIndex,
-            domain: iface.domain,
-            env: iface.env ?? null,
-            branch: iface.branch ?? null,
-            runtimeType: iface.runtime?.type ?? null,
-            runtimeId: iface.runtime?.id ?? null,
-          }),
-        )
-      })
+      return groupServicesByService(parsed.services)
     } catch {
       return []
     }
   }, [yamlContent])
 
-  const filteredData = useMemo((): readonly ScoredRow[] => {
-    if (!searchTerm.trim()) {
-      return flatData.map((row) => ({ ...row, score: 0 }))
-    }
+  const filteredServices = useMemo((): GroupedService[] => {
+    if (!searchTerm.trim()) return [...groupedServices]
 
-    const query = searchTerm.toLowerCase()
-
-    return flatData
-      .map((row): ScoredRow => {
-        let score = 0
-
-        const domainLower = row.domain?.toLowerCase()
-        if (domainLower) {
-          if (domainLower.includes(query)) {
-            score += SEARCH_SCORE_WEIGHTS.DOMAIN_PARTIAL
-            if (domainLower === query) {
-              score += SEARCH_SCORE_WEIGHTS.DOMAIN_EXACT - SEARCH_SCORE_WEIGHTS.DOMAIN_PARTIAL
-            }
-          }
-        }
-
-        if (row.serviceName?.toLowerCase().includes(query)) {
-          score += SEARCH_SCORE_WEIGHTS.SERVICE_NAME
-        }
-
-        if (row.branch?.toLowerCase().includes(query)) {
-          score += SEARCH_SCORE_WEIGHTS.BRANCH
-        }
-
-        if (row.owner?.toLowerCase().includes(query)) {
-          score += SEARCH_SCORE_WEIGHTS.OWNER
-        }
-
-        if (row.env?.toLowerCase().includes(query)) {
-          score += SEARCH_SCORE_WEIGHTS.ENV
-        }
-
-        return { ...row, score }
-      })
-      .filter((row) => row.score > 0)
+    return groupedServices
+      .map((service) => ({ service, score: calculateSearchScore(service, searchTerm) }))
+      .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
-  }, [flatData, searchTerm])
+      .map(({ service }) => service)
+  }, [groupedServices, searchTerm])
+
+  const handleRowAction = useCallback((service: GroupedService) => {
+    if (service.repository) {
+      window.open(service.repository, "_blank", "noopener,noreferrer")
+    }
+  }, [])
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
+      e.preventDefault()
+      searchInputRef.current?.focus()
+    }
+    if (e.key === "Escape") {
+      searchInputRef.current?.blur()
+    }
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [handleKeyDown])
 
   const exportToCsv = useCallback(() => {
-    const rows = filteredData.map((row) => [
-      row.domain ?? "—",
-      row.serviceName ?? "",
-      row.env ?? "—",
-      row.branch ?? "—",
-      row.runtimeType ?? "—",
-      row.runtimeId ?? "—",
-      row.owner ?? "",
-      row.repository ?? "",
-    ])
+    const rows: string[][] = []
+    for (const service of filteredServices) {
+      if (service.environments.length === 0) {
+        rows.push([service.name, service.owner, service.repository, "—", "—", "—", "—", "—"])
+      } else {
+        for (const env of service.environments) {
+          rows.push([
+            service.name,
+            service.owner,
+            service.repository,
+            env.domain,
+            ENV_LABELS[env.env],
+            env.branch ?? "—",
+            env.runtimeType ?? "—",
+            env.runtimeId ?? "—",
+          ])
+        }
+      }
+    }
 
     const csvContent = [
-      CSV_HEADERS.join(","),
+      ["Service", "Owner", "Repository", "Domain", "Environment", "Branch", "Runtime Type", "Runtime ID"].join(","),
       ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
     ].join("\n")
 
@@ -184,294 +503,65 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
     anchor.download = "services-export.csv"
     anchor.click()
     URL.revokeObjectURL(url)
-  }, [filteredData])
-
-  const toggleRow = useCallback(
-    (index: number) => {
-      setExpandedRows((prev) => {
-        const next = new Set(prev)
-        if (next.has(index)) {
-          next.delete(index)
-        } else {
-          next.add(index)
-        }
-        return next
-      })
-    },
-    [],
-  )
-
-  const copyDomain = useCallback((domain: string) => {
-    void navigator.clipboard.writeText(domain)
-  }, [])
+  }, [filteredServices])
 
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value)
   }, [])
 
-  const handleToggleRow = useCallback(
-    (index: number) => () => {
-      toggleRow(index)
-    },
-    [toggleRow],
-  )
-
-  const handleCopyDomain = useCallback(
-    (domain: string) => () => {
-      copyDomain(domain)
-    },
-    [copyDomain],
-  )
-
-  const interfaceCount = filteredData.length
-  const interfaceLabel = interfaceCount === 1 ? "interface" : "interfaces"
-
   return (
     <div className="space-y-3">
+      {/* Search bar */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
-            aria-hidden="true"
-          />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" aria-hidden="true" />
           <Input
-            placeholder="Search domains, services, branches, owners..."
+            ref={searchInputRef}
+            placeholder="Search... (Press / to focus)"
             value={searchTerm}
             onChange={handleSearchChange}
-            className="pl-8 h-9 text-sm"
-            aria-label="Search interfaces"
+            className="pl-8 h-9 text-sm dark:border-white/5 border-black/10"
+            aria-label="Search services"
           />
         </div>
-
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           onClick={exportToCsv}
-          className="h-9 bg-transparent"
+          className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:border-white/5 border-black/10 border"
           aria-label="Export to CSV"
         >
-          <Download className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+          <Download className="h-3.5 w-3.5 inline mr-1.5" />
           CSV
-        </Button>
+        </button>
       </div>
 
-      <div className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
-        {interfaceCount} {interfaceLabel}
+      {/* Count */}
+      <div className="text-[11px] text-muted-foreground/60" aria-live="polite" aria-atomic="true">
+        {filteredServices.length} {filteredServices.length === 1 ? "service" : "services"}
       </div>
 
-      <div className="border rounded-md overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="w-8" aria-label="Expand row" />
-              <TableHead className="font-medium">Domain</TableHead>
-              <TableHead className="font-medium">Service</TableHead>
-              <TableHead className="font-medium">Environment</TableHead>
-              <TableHead className="font-medium">Branch</TableHead>
-              <TableHead className="font-medium">Runtime</TableHead>
-              <TableHead className="font-medium">Owner</TableHead>
+      {/* Table */}
+      <TableProvider
+        data={filteredServices}
+        columns={columns}
+        onRowAction={handleRowAction}
+        gridTemplate={GRID_TEMPLATE}
+      >
+        <TableHeader>
+          {({ headerGroup }) => (
+            <TableHeaderGroup headerGroup={headerGroup}>
+              {({ header }) => <TableHead header={header} />}
+            </TableHeaderGroup>
+          )}
+        </TableHeader>
+        <TableBody>
+          {({ row, rowIndex }) => (
+            <TableRow row={row} rowIndex={rowIndex}>
+              {({ cell }) => <TableCell cell={cell} />}
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {interfaceCount === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-sm text-muted-foreground">
-                  No interfaces found
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredData.map((row) => {
-                const isExpanded = expandedRows.has(row.serviceIndex)
-                const rowKey = `row-${row.serviceIndex}`
-                const expandedKey = `${rowKey}-expanded`
-
-                return (
-                  <Fragment key={rowKey}>
-                    <TableRow className="hover:bg-muted/50">
-                      <TableCell>
-                        {row.repository && (
-                          <button
-                            type="button"
-                            onClick={handleToggleRow(row.serviceIndex)}
-                            className="text-muted-foreground hover:text-foreground"
-                            aria-label={isExpanded ? "Collapse row" : "Expand row"}
-                            aria-expanded={isExpanded}
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                            )}
-                          </button>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {row.domain ? (
-                          <div className="flex items-center gap-2 group">
-                            <code className="text-sm font-mono bg-muted px-2 py-0.5 rounded">{row.domain}</code>
-                            <button
-                              type="button"
-                              onClick={handleCopyDomain(row.domain)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity"
-                              aria-label={`Copy domain ${row.domain}`}
-                            >
-                              <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" aria-hidden="true" />
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-medium text-sm">{row.serviceName}</TableCell>
-                      <TableCell>
-                        {row.env ? (
-                          <Badge variant="secondary" className={`text-xs font-normal ${getEnvColor(row.env)}`}>
-                            {row.env}
-                          </Badge>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {row.branch ? (
-                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-                            {row.branch}
-                          </code>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {row.runtimeType ? (
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant="outline" className="text-xs font-mono">
-                              {row.runtimeType}
-                            </Badge>
-                            {row.runtimeId && (
-                              <code className="text-[10px] text-muted-foreground truncate max-w-[80px]">
-                                {row.runtimeId.length > 12 ? `${row.runtimeId.slice(0, 12)}...` : row.runtimeId}
-                              </code>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{row.owner}</TableCell>
-                    </TableRow>
-                    {isExpanded && (
-                      <TableRow key={expandedKey} className="bg-muted/20">
-                        <TableCell colSpan={7} className="py-3 px-4">
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-start gap-8">
-                              <div>
-                                <div className="text-xs font-medium text-muted-foreground mb-1">Repository</div>
-                                {row.repository ? (
-                                  <a
-                                    href={row.repository}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline inline-flex items-center gap-1 text-xs"
-                                  >
-                                    {row.repository.replace("https://github.com/", "")}
-                                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                                  </a>
-                                ) : (
-                                  <span className="text-muted-foreground text-xs">—</span>
-                                )}
-                              </div>
-                              {row.dependencies.length > 0 && (
-                                <div>
-                                  <div className="text-xs font-medium text-muted-foreground mb-1">Dependencies</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {row.dependencies.map((dep) => (
-                                      <span
-                                        key={dep}
-                                        className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground"
-                                      >
-                                        {dep}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {row.runtimeType && (
-                                <div>
-                                  <div className="text-xs font-medium text-muted-foreground mb-1">Runtime</div>
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="text-xs font-mono">
-                                        {row.runtimeType}
-                                      </Badge>
-                                      {row.runtimeId && (
-                                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-                                          {row.runtimeId}
-                                        </code>
-                                      )}
-                                    </div>
-                                    {row.runtimeId && (
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => {
-                                            void navigator.clipboard.writeText(row.runtimeId ?? "")
-                                          }}
-                                          className="h-6 text-xs"
-                                        >
-                                          <Copy className="h-3 w-3 mr-1" />
-                                          Copy ID
-                                        </Button>
-                                        {row.runtimeType === "ec2" && row.runtimeId && row.runtimeId.startsWith("i-") && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                              const url = `https://console.aws.amazon.com/systems-manager/session-manager/${row.runtimeId}`
-                                              window.open(url, "_blank", "noopener,noreferrer")
-                                            }}
-                                            className="h-6 text-xs"
-                                          >
-                                            <Terminal className="h-3 w-3 mr-1" />
-                                            Open SSM
-                                          </Button>
-                                        )}
-                                        {row.runtimeType === "k8s" && row.runtimeId && row.runtimeId.includes("/") && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                              const [cluster, namespace] = row.runtimeId!.split("/")
-                                              const hint = `kubectl --context ${cluster} -n ${namespace} get pods`
-                                              void navigator.clipboard.writeText(hint)
-                                            }}
-                                            className="h-6 text-xs"
-                                          >
-                                            <Terminal className="h-3 w-3 mr-1" />
-                                            Copy kubectl hint
-                                          </Button>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+          )}
+        </TableBody>
+      </TableProvider>
     </div>
   )
 }
