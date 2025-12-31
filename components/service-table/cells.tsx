@@ -1,10 +1,11 @@
 "use client"
 
-import { memo, useState, useCallback } from "react"
+import { memo, useState, useCallback, useMemo } from "react"
 import { Copy, ExternalLink, Terminal } from "lucide-react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Pill, PillIndicator } from "@/components/kibo-ui/pill"
 import type { EnvironmentInfo, GroupedService } from "./types"
 import { ENV_LABELS, ENV_ORDER, RUNTIME_LABELS } from "./constants"
 
@@ -16,28 +17,126 @@ interface EnvBadgesProps {
 }
 
 /**
- * Environment badges - displays unique environments with production indicator
+ * Environment cell - single aggregated state indicator using Pill component
+ * Displays one primary environment label with +N counter for additional environments
+ * Popover on hover/focus shows all environments ordered PROD → STAGE → DEV
  */
 export const EnvBadges = memo(function EnvBadges({ environments }: EnvBadgesProps) {
-  const uniqueEnvs = [...new Set(environments.map((e) => e.env))]
-  const sortedEnvs = uniqueEnvs.sort((a, b) => ENV_ORDER.indexOf(a) - ENV_ORDER.indexOf(b))
+  const [isOpen, setIsOpen] = useState(false)
+
+  const { sortedEnvs, primaryEnv, additionalCount, hasProduction } = useMemo(() => {
+    const uniqueEnvs = [...new Set(environments.map((e) => e.env))]
+    const sortedEnvs = uniqueEnvs.sort((a, b) => ENV_ORDER.indexOf(a) - ENV_ORDER.indexOf(b))
+    const hasProduction = sortedEnvs.includes("production")
+    const primaryEnv = sortedEnvs[0] ?? null
+    const additionalCount = sortedEnvs.length > 1 ? sortedEnvs.length - 1 : 0
+
+    return { sortedEnvs, primaryEnv, additionalCount, hasProduction }
+  }, [environments])
+
+  const sortedEnvironmentsForPopover = useMemo(() => {
+    return [...environments].sort((a, b) => {
+      const aIndex = ENV_ORDER.indexOf(a.env)
+      const bIndex = ENV_ORDER.indexOf(b.env)
+      return aIndex - bIndex
+    })
+  }, [environments])
+
+  if (sortedEnvs.length === 0) {
+    return (
+      <div className="flex items-center h-5">
+        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex items-center gap-1.5 h-5">
-      {sortedEnvs.length === 0 ? (
-        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
-      ) : (
-        sortedEnvs.map((env) => (
-          <div key={env} className="inline-flex items-center gap-1">
-            {env === "production" && (
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" aria-label="Production" />
+    <div className="flex items-center h-5">
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Pill
+              variant="secondary"
+              className="h-5 min-w-[60px] max-w-[120px] flex items-center gap-1.5 px-2 py-0 shrink-0 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
+              {hasProduction && <PillIndicator variant="success" pulse={false} />}
+              <span className="text-[11px] font-mono text-muted-foreground/80 uppercase tracking-wide leading-none">
+                {primaryEnv ? ENV_LABELS[primaryEnv] : "—"}
+              </span>
+              {additionalCount > 0 && (
+                <span className="text-[11px] font-mono text-muted-foreground/40 leading-none">
+                  +{additionalCount}
+                </span>
+              )}
+            </Pill>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-96 p-3 dark:border-white/10 border-black/10 shadow-lg"
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2 px-1">
+              Environments ({sortedEnvironmentsForPopover.length})
+            </div>
+            {sortedEnvironmentsForPopover.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground/60 py-2 px-1">No environments configured</div>
+            ) : (
+              sortedEnvironmentsForPopover.map((env, idx) => (
+                <div
+                  key={`${env.domain}-${env.env}-${idx}`}
+                  className="flex items-center justify-between gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors group/item"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="inline-flex items-center gap-1.5 shrink-0">
+                      {env.env === "production" && (
+                        <PillIndicator variant="success" pulse={false} />
+                      )}
+                      <span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wide min-w-12">
+                        {ENV_LABELS[env.env]}
+                      </span>
+                    </div>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-[11px] font-mono text-foreground truncate font-medium">
+                        {env.domain}
+                      </span>
+                      {env.branch && (
+                        <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                          branch: {env.branch}
+                        </span>
+                      )}
+                      {env.runtimeType && env.runtimeId && (
+                        <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                          {env.runtimeType}: {env.runtimeId}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(env.domain)
+                      setIsOpen(false)
+                    }}
+                    className="p-1.5 hover:bg-muted rounded transition-colors shrink-0 opacity-0 group-hover/item:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label={`Copy ${env.domain}`}
+                    title="Copy domain"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+              ))
             )}
-            <span className="text-[11px] font-mono text-muted-foreground/80 uppercase tracking-wide leading-none">
-              {ENV_LABELS[env]}
-            </span>
           </div>
-        ))
-      )}
+        </PopoverContent>
+      </Popover>
     </div>
   )
 })
