@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import dynamic from "next/dynamic"
 import { useAtomValue, useSetAtom } from "jotai"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/components/theme-provider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, CheckCircle, Upload, Download } from "lucide-react"
@@ -13,12 +13,13 @@ import { createUploadSource } from "@/lib/source-identifier"
 import { useAutosave, useAutosaveFlush } from "@/lib/autosave/autosave-orchestrator"
 import { setupYamlLanguage } from "@/lib/monaco/yaml-setup"
 import type { OnMount } from "@monaco-editor/react"
+import { Spinner } from "./kibo-ui/spinner"
 
 const Editor = dynamic(() => import("@monaco-editor/react").then((mod) => mod.default), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center" style={{ minHeight: "500px" }}>
-      <div className="text-sm text-muted-foreground">Loading editor...</div>
+    <div className="flex items-center justify-center min-h-[500px]">
+      <Spinner variant="throbber" />
     </div>
   ),
 })
@@ -39,7 +40,7 @@ interface ValidationError {
 type ValidationResult = ValidationState | ValidationError
 
 export function YamlEditor() {
-  const { theme } = useTheme()
+  const { resolvedTheme } = useTheme()
   const content = useAtomValue(contentAtom)
   const setContent = useSetAtom(contentAtom)
   const switchSource = useSetAtom(switchSourceAtom)
@@ -129,7 +130,7 @@ export function YamlEditor() {
     input.click()
   }
 
-  const editorTheme = theme === "dark" ? "vs-dark" : "light"
+  const editorTheme = resolvedTheme === "dark" ? "vs-dark" : "light"
 
   return (
     <div className="space-y-3">

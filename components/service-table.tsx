@@ -102,6 +102,11 @@ function groupServicesByService(services: readonly Service[]): readonly GroupedS
     // This ensures we capture all domains regardless of env validity
     if (service.interfaces && service.interfaces.length > 0) {
       for (const iface of service.interfaces) {
+        if (iface.domain && iface.domain.trim().length > 0) {
+          const normalizedEnv = normalizeEnv(iface.env)
+          // Default to "development" if env is invalid or missing
+          // This ensures no domain is lost due to invalid env
+          const env: "production" | "staging" | "development" = normalizedEnv ?? "development"
           
           environments.push({
             env,
