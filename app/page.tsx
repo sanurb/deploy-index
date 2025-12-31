@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useAtomValue } from "jotai"
-import { ServiceTable } from "@/components/service-table"
+import { ServiceTable } from "@/components/service-table/index"
 import { YamlEditor } from "@/components/yaml-editor"
 import { UrlViewer } from "@/components/url-viewer"
 import { CommandPalette } from "@/components/command-palette"
