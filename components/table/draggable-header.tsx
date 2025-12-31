@@ -56,7 +56,7 @@ export function DraggableHeader({
       {!disabled && (
         <GripVertical
           size={14}
-          className="ml-1 text-muted-foreground opacity-0 group-hover/header:opacity-100 flex-shrink-0 cursor-grab active:cursor-grabbing"
+          className="ml-1 text-muted-foreground opacity-0 group-hover/header:opacity-100 shrink-0 cursor-grab active:cursor-grabbing"
           {...attributes}
           {...listeners}
         />

@@ -98,14 +98,15 @@ function groupServicesByService(services: readonly Service[]): readonly GroupedS
   return services.map((service, serviceIndex) => {
     const environments: EnvironmentInfo[] = []
 
+    // Process all interfaces that have a domain
+    // This ensures we capture all domains regardless of env validity
     if (service.interfaces && service.interfaces.length > 0) {
       for (const iface of service.interfaces) {
-        const normalizedEnv = normalizeEnv(iface.env)
-        if (normalizedEnv && iface.domain) {
+          
           environments.push({
-            env: normalizedEnv,
-            domain: iface.domain,
-            branch: iface.branch ?? null,
+            env,
+            domain: iface.domain.trim(),
+            branch: iface.branch?.trim() ?? null,
             runtimeType: iface.runtime?.type ?? null,
             runtimeId: iface.runtime?.id ?? null,
           })
@@ -209,39 +210,56 @@ const DomainsAffordance = memo(function DomainsAffordance({ environments, domain
             </button>
           </PopoverTrigger>
           <PopoverContent
-            className="w-80 p-2 dark:border-white/10 border-black/10"
+            className="w-96 p-3 dark:border-white/10 border-black/10 shadow-lg"
             side="bottom"
             align="start"
             sideOffset={4}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="space-y-1">
-              {environments.map((env, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-2 p-1.5 rounded hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div className="inline-flex items-center gap-1 shrink-0 w-14">
-                      {env.env === "production" && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      )}
-                      <span className="text-[10px] font-mono text-muted-foreground/60 uppercase">
-                        {ENV_LABELS[env.env]}
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-mono text-foreground truncate">{env.domain}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyDomain(env.domain)}
-                    className="p-1 hover:bg-muted rounded transition-colors shrink-0 opacity-60 hover:opacity-100"
-                    aria-label={`Copy ${env.domain}`}
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2 px-1">
+                Domains ({environments.length})
+              </div>
+              {environments.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground/60 py-2 px-1">No domains configured</div>
+              ) : (
+                environments.map((env, idx) => (
+                  <div
+                    key={`${env.domain}-${env.env}-${idx}`}
+                    className="flex items-center justify-between gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors group/item"
                   >
-                    <Copy className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="inline-flex items-center gap-1.5 shrink-0">
+                        {env.env === "production" && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" aria-label="Production" />
+                        )}
+                        <span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wide min-w-12">
+                          {ENV_LABELS[env.env]}
+                        </span>
+                      </div>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-[11px] font-mono text-foreground truncate font-medium">
+                          {env.domain}
+                        </span>
+                        {env.branch && (
+                          <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                            branch: {env.branch}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyDomain(env.domain)}
+                      className="p-1.5 hover:bg-muted rounded transition-colors shrink-0 opacity-0 group-hover/item:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={`Copy ${env.domain}`}
+                      title="Copy domain"
+                    >
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </PopoverContent>
         </Popover>

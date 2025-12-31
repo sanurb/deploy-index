@@ -1,12 +1,41 @@
-import type { Simplify } from "type-fest"
+/**
+ * Valid runtime types for service interfaces
+ */
+const RUNTIME_TYPES = {
+  EC2: "ec2",
+  VM: "vm",
+  K8S: "k8s",
+  LAMBDA: "lambda",
+  CONTAINER: "container",
+  PAAS: "paas",
+  UNKNOWN: "unknown",
+} as const
 
-export type RuntimeType = "ec2" | "vm" | "k8s" | "lambda" | "container" | "paas" | "unknown"
+/**
+ * Valid environment types
+ */
+const ENVIRONMENT_TYPES = {
+  PRODUCTION: "production",
+  STAGING: "staging",
+  DEVELOPMENT: "development",
+} as const
 
+type RuntimeType = (typeof RUNTIME_TYPES)[keyof typeof RUNTIME_TYPES]
+type EnvironmentType = (typeof ENVIRONMENT_TYPES)[keyof typeof ENVIRONMENT_TYPES]
+
+export type { RuntimeType }
+
+/**
+ * Runtime locator identifying where a service interface is deployed
+ */
 export interface RuntimeLocator {
   readonly type: RuntimeType
   readonly id: string
 }
 
+/**
+ * Service interface representing a deployment endpoint
+ */
 export interface ServiceInterface {
   readonly domain: string
   readonly env: string | null
@@ -14,6 +43,9 @@ export interface ServiceInterface {
   readonly runtime: RuntimeLocator | null
 }
 
+/**
+ * Service definition with its interfaces and dependencies
+ */
 export interface Service {
   readonly name: string
   readonly owner: string
@@ -22,6 +54,9 @@ export interface Service {
   readonly interfaces: readonly ServiceInterface[] | undefined
 }
 
+/**
+ * Parsed YAML structure
+ */
 export interface ParsedYaml {
   readonly services: readonly Service[]
 }
@@ -37,6 +72,10 @@ interface ValidationError {
 
 type ValidationResult = ValidationSuccess | ValidationError
 
+/**
+ * Builder for constructing a service interface during parsing
+ * Properties are mutable during construction
+ */
 interface InterfaceBuilder {
   domain?: string
   env?: string | null
@@ -44,6 +83,10 @@ interface InterfaceBuilder {
   runtime?: RuntimeLocator | null
 }
 
+/**
+ * Builder for constructing a service during parsing
+ * Properties are mutable during construction
+ */
 interface ServiceBuilder {
   name?: string
   owner?: string
@@ -52,443 +95,630 @@ interface ServiceBuilder {
   interfaces?: readonly ServiceInterface[]
 }
 
-interface ParseContext {
-  readonly indentLevel: number
-  readonly currentService: ServiceBuilder | null
-  readonly currentInterface: InterfaceBuilder | null
-  readonly inInterfacesArray: boolean
-  readonly inDependenciesArray: boolean
-  readonly inRuntimeBlock: boolean
-  readonly runtimeIndentLevel: number
-  readonly services: Service[]
-  readonly dependencies: string[]
-}
-
 const SERVICE_ARRAY_KEY = "interfaces"
 const DEPENDENCIES_KEY = "dependencies"
+const RUNTIME_KEY = "runtime"
+const DOMAIN_KEY = "domain"
+const ENV_KEY = "env"
+const BRANCH_KEY = "branch"
+const TYPE_KEY = "type"
+const ID_KEY = "id"
+const REPOSITORY_KEY = "repository"
+const OWNER_KEY = "owner"
+const NAME_KEY = "name"
 
+const ARRAY_ITEM_PREFIX = "- "
+const COMMENT_PREFIX = "#"
+const QUOTE_DOUBLE = '"'
+const QUOTE_SINGLE = "'"
+const ARRAY_START = "["
+const ARRAY_END = "]"
+const TAB_SIZE = 2
+
+const VALID_RUNTIME_TYPES = new Set<RuntimeType>(Object.values(RUNTIME_TYPES))
+const VALID_ENV_TYPES = new Set<EnvironmentType>(Object.values(ENVIRONMENT_TYPES))
+
+const RE_KEY_VALUE = /^(\w+):\s*(.*)$/
+const RE_SERVICE_START = /^-\s+name:\s*(.+)$/
+const RE_INTERFACE_ITEM = /^-\s+(\w+):\s*(.+)$/
+
+/**
+ * Calculates the indentation level of a line (spaces only, tabs count as 2 spaces)
+ */
 function getIndentLevel(line: string): number {
   let indent = 0
   for (const char of line) {
     if (char === " ") {
       indent++
-    } else if (char === "\t") {
-      indent += 2
-    } else {
-      break
+      continue
     }
+
+    if (char === "\t") {
+      indent += TAB_SIZE
+      continue
+    }
+
+    break
   }
   return indent
 }
 
+/**
+ * Checks if a line is empty or a comment
+ */
 function isCommentOrEmpty(line: string): boolean {
-      const trimmed = line.trim()
-  return trimmed === "" || trimmed.startsWith("#")
+  const trimmed = line.trim()
+  return trimmed.length === 0 || trimmed.startsWith(COMMENT_PREFIX)
 }
 
-function parseKeyValue(line: string): { key: string; value: string } | null {
-  const match = line.match(/^(\w+):\s*(.*)$/)
+/**
+ * Parses a key-value pair from a line (e.g., "key: value")
+ */
+function parseKeyValue(line: string): { readonly key: string; readonly value: string } | null {
+  const match = line.match(RE_KEY_VALUE)
   if (!match) {
     return null
   }
 
-  const [, key, value] = match
-  return { key, value: value.trim() }
+  const key = match[1] ?? ""
+  const value = (match[2] ?? "").trim()
+  return { key, value }
 }
 
+/**
+ * Removes quotes from a value if present
+ */
 function parseQuotedValue(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith(QUOTE_DOUBLE) && value.endsWith(QUOTE_DOUBLE)) ||
+    (value.startsWith(QUOTE_SINGLE) && value.endsWith(QUOTE_SINGLE))
+  ) {
     return value.slice(1, -1)
   }
   return value
 }
 
+/**
+ * Parses an array item from a line starting with "- "
+ */
 function parseArrayItem(line: string): string | null {
   const trimmed = line.trim()
-  if (!trimmed.startsWith("- ")) {
+  if (!trimmed.startsWith(ARRAY_ITEM_PREFIX)) {
     return null
   }
 
-  const item = trimmed.slice(2).trim()
+  const item = trimmed.slice(ARRAY_ITEM_PREFIX.length).trim()
   return parseQuotedValue(item)
 }
 
+/**
+ * Checks if a value indicates the start of an array (empty string or "[")
+ */
 function isArrayStart(value: string): boolean {
-  return value === "" || value === "["
+  return value === "" || value === ARRAY_START
 }
 
+/**
+ * Parses an inline array from a value (e.g., "[item1, item2]")
+ */
 function parseInlineArray(value: string): readonly string[] {
-  if (!value.startsWith("[") || !value.endsWith("]")) {
+  if (!value.startsWith(ARRAY_START) || !value.endsWith(ARRAY_END)) {
     return []
   }
 
-  return value
-            .slice(1, -1)
-            .split(",")
-    .map((item) => parseQuotedValue(item.trim()))
-    .filter((item) => item.length > 0)
-}
-
-function finishCurrentService(context: ParseContext): ParseContext {
-  if (!context.currentService || !context.currentService.name || !context.currentService.owner) {
-    return context
+  const body = value.slice(1, -1)
+  if (body.trim().length === 0) {
+    return []
   }
 
-  const service: Service = {
-    name: context.currentService.name,
-    owner: context.currentService.owner,
-    repository: context.currentService.repository ?? "",
-    dependencies: context.dependencies.length > 0 ? [...context.dependencies] : [],
-    interfaces: context.currentService.interfaces,
+  const parts = body.split(",")
+  const out: string[] = []
+  for (const part of parts) {
+    const item = parseQuotedValue(part.trim())
+    if (item.length === 0) {
+      continue
+    }
+    out.push(item)
+  }
+  return out
+}
+
+/**
+ * Normalizes runtime type to a valid RuntimeType
+ */
+function normalizeRuntimeType(value: string): RuntimeType {
+  const lower = value.toLowerCase() as RuntimeType
+  return VALID_RUNTIME_TYPES.has(lower) ? lower : RUNTIME_TYPES.UNKNOWN
+}
+
+/**
+ * Creates a RuntimeLocator from builder data, or null if invalid
+ */
+function buildRuntime(builder: InterfaceBuilder): RuntimeLocator | null {
+  const rt = builder.runtime
+  if (!rt) {
+    return null
+  }
+
+  const id = rt.id.trim()
+  if (id.length === 0) {
+    return null
   }
 
   return {
-    ...context,
-    services: [...context.services, service],
-    currentService: null,
-    currentInterface: null,
+    type: rt.type ?? RUNTIME_TYPES.UNKNOWN,
+    id,
+  }
+}
+
+function buildInterface(builder: InterfaceBuilder): ServiceInterface | null {
+  const domain = builder.domain?.trim()
+  if (!domain || domain.length === 0) {
+    return null
+  }
+
+  return {
+    domain,
+    env: builder.env?.trim() ?? null,
+    branch: builder.branch?.trim() ?? null,
+    runtime: buildRuntime(builder),
+  }
+}
+
+function tryParseServiceName(trimmed: string): string | null {
+  const match = trimmed.match(RE_SERVICE_START)
+  if (!match) {
+    return null
+  }
+  return parseQuotedValue((match[1] ?? "").trim())
+}
+
+type EnvParseState = {
+  inInterfacesArray: boolean
+  inDependenciesArray: boolean
+  inRuntimeBlock: boolean
+  serviceIndent: number
+  interfaceArrayIndent: number
+  runtimeIndent: number
+  dependenciesIndent: number
+}
+
+function createInitialState(): EnvParseState {
+  return {
     inInterfacesArray: false,
     inDependenciesArray: false,
     inRuntimeBlock: false,
-    runtimeIndentLevel: 0,
-    dependencies: [],
+    serviceIndent: 0,
+    interfaceArrayIndent: 0,
+    runtimeIndent: 0,
+    dependenciesIndent: 0,
   }
 }
 
-function finishCurrentInterface(context: ParseContext): ParseContext {
-  if (!context.currentInterface || !context.currentInterface.domain || !context.currentService) {
-    return context
-  }
+type ServiceAccumulator = {
+  currentService: ServiceBuilder | null
+  currentInterface: InterfaceBuilder | null
+  dependencies: string[]
+  services: Service[]
+}
 
-  let runtime: RuntimeLocator | null = null
-  if (context.currentInterface.runtime) {
-    const rt = context.currentInterface.runtime
-    if (rt.id && rt.id.trim().length > 0) {
-      runtime = {
-        type: rt.type ?? "unknown",
-        id: rt.id,
-      }
-    }
-  }
-
-  const serviceInterface: ServiceInterface = {
-    domain: context.currentInterface.domain,
-    env: context.currentInterface.env ?? null,
-    branch: context.currentInterface.branch ?? null,
-    runtime,
-  }
-
-  const interfaces = context.currentService.interfaces ? [...context.currentService.interfaces, serviceInterface] : [serviceInterface]
-
+function createAccumulator(): ServiceAccumulator {
   return {
-    ...context,
-    currentService: {
-      ...context.currentService,
-      interfaces,
-    },
+    currentService: null,
     currentInterface: null,
+    dependencies: [],
+    services: [],
   }
 }
 
-function handleServiceStart(line: string, context: ParseContext): ParseContext {
-  const newContext = finishCurrentService(context)
-
-  const nameMatch = line.match(/name:\s*(.+)$/)
-  if (!nameMatch) {
-    return newContext
+function finishCurrentInterface(acc: ServiceAccumulator, state: EnvParseState): void {
+  if (!acc.currentService || !acc.currentInterface) {
+    acc.currentInterface = null
+    state.inRuntimeBlock = false
+    state.runtimeIndent = 0
+    return
   }
 
-  const name = parseQuotedValue(nameMatch[1].trim())
+  const iface = buildInterface(acc.currentInterface)
+  acc.currentInterface = null
+  state.inRuntimeBlock = false
+  state.runtimeIndent = 0
 
-  return {
-    ...newContext,
-    currentService: {
-      name,
-    } as ServiceBuilder,
+  if (!iface) {
+    return
+  }
+
+  const existing = acc.currentService.interfaces ?? []
+  acc.currentService.interfaces = [...existing, iface]
+}
+
+function finishCurrentService(acc: ServiceAccumulator, state: EnvParseState): void {
+  finishCurrentInterface(acc, state)
+
+  const svc = acc.currentService
+  acc.currentService = null
+
+  state.inInterfacesArray = false
+  state.inDependenciesArray = false
+  state.inRuntimeBlock = false
+  state.serviceIndent = 0
+  state.interfaceArrayIndent = 0
+  state.runtimeIndent = 0
+  state.dependenciesIndent = 0
+
+  if (!svc?.name || !svc.owner) {
+    acc.dependencies = []
+    return
+  }
+
+  // BUGFIX (critical): inline dependencies were stored on svc.dependencies but were ignored.
+  // Prefer svc.dependencies when present, otherwise use accumulated dependencies from block list.
+  const deps = svc.dependencies ?? acc.dependencies
+  const dependencies = deps.length > 0 ? [...deps] : []
+
+  acc.services.push({
+    name: svc.name,
+    owner: svc.owner,
+    repository: svc.repository ?? "",
+    dependencies,
+    interfaces: svc.interfaces,
+  })
+
+  acc.dependencies = []
+}
+
+function isServiceStart(trimmed: string): boolean {
+  if (trimmed.startsWith("- name:")) {
+    return true
+  }
+  return trimmed.startsWith(ARRAY_ITEM_PREFIX) && trimmed.includes("name:")
+}
+
+function parseServiceStart(trimmed: string, acc: ServiceAccumulator, state: EnvParseState): void {
+  finishCurrentService(acc, state)
+
+  const name = tryParseServiceName(trimmed)
+  if (!name) {
+    return
+  }
+
+  acc.currentService = { name }
+  acc.currentInterface = null
+
+  // Original behavior: set indent baseline to 2 for top-level service entries.
+  state.serviceIndent = 2
+}
+
+function maybeExitBlocksOnIndent(indent: number, state: EnvParseState): void {
+  // Performance + correctness: if indentation decreases, we must exit nested blocks.
+  // This prevents accidental "sticky" flags when YAML structure ends.
+  if (state.inRuntimeBlock && indent <= state.runtimeIndent) {
+    state.inRuntimeBlock = false
+    state.runtimeIndent = 0
+  }
+
+  if (state.inDependenciesArray && indent <= state.dependenciesIndent) {
+    state.inDependenciesArray = false
+    state.dependenciesIndent = 0
+  }
+
+  if (state.inInterfacesArray && indent <= state.interfaceArrayIndent) {
+    // We still allow interface array items at exactly interfaceArrayIndent (they start with "- ").
+    // Exiting happens only when we fall back to service-level indentation or less.
+    if (indent <= state.serviceIndent) {
+      state.inInterfacesArray = false
+      state.interfaceArrayIndent = 0
+    }
   }
 }
 
-function handleInterfaceStart(context: ParseContext): ParseContext {
-  const newContext = finishCurrentInterface(context)
+type ServiceKeyValueHandler = (args: {
+  readonly value: string
+  readonly indent: number
+  readonly acc: ServiceAccumulator
+  readonly state: EnvParseState
+}) => void
 
-  return {
-    ...newContext,
-    inInterfacesArray: true,
-    currentInterface: {},
-  }
-}
-
-function handleKeyValue(line: string, context: ParseContext, indentLevel: number): ParseContext {
-  const kv = parseKeyValue(line)
-  if (!kv) {
-    return context
-  }
-
-  const { key, value } = kv
-
-  if (context.inInterfacesArray && context.currentInterface && indentLevel > context.indentLevel) {
-    const parsedValue = parseQuotedValue(value)
-
-    if (key === "runtime" && isArrayStart(value)) {
-      return {
-        ...context,
-        inRuntimeBlock: true,
-        runtimeIndentLevel: indentLevel,
-      }
-    }
-
-    if (context.inRuntimeBlock && indentLevel > context.runtimeIndentLevel) {
-      const currentRuntime = context.currentInterface.runtime ?? { type: "unknown" as RuntimeType, id: "" }
-      
-      if (key === "type") {
-        const runtimeType = parsedValue.toLowerCase() as RuntimeType
-        const validTypes: readonly RuntimeType[] = ["ec2", "vm", "k8s", "lambda", "container", "paas", "unknown"]
-        const normalizedType = validTypes.includes(runtimeType) ? runtimeType : "unknown"
-        return {
-          ...context,
-          currentInterface: {
-            ...context.currentInterface,
-            runtime: {
-              ...currentRuntime,
-              type: normalizedType,
-            },
-          },
-        }
-      }
-
-      if (key === "id") {
-        return {
-          ...context,
-          currentInterface: {
-            ...context.currentInterface,
-            runtime: {
-              ...currentRuntime,
-              id: parsedValue,
-            },
-          },
-        }
-      }
-    }
-
-    if (key === "domain") {
-      return {
-        ...context,
-        currentInterface: {
-          ...context.currentInterface,
-          domain: parsedValue,
-        },
-        inRuntimeBlock: false,
-        runtimeIndentLevel: 0,
-      }
-    }
-
-    if (key === "env") {
-      return {
-        ...context,
-        currentInterface: {
-          ...context.currentInterface,
-          env: parsedValue,
-        },
-        inRuntimeBlock: false,
-        runtimeIndentLevel: 0,
-      }
-    }
-
-    if (key === "branch") {
-      return {
-        ...context,
-        currentInterface: {
-          ...context.currentInterface,
-          branch: parsedValue,
-        },
-        inRuntimeBlock: false,
-        runtimeIndentLevel: 0,
-      }
-    }
-  }
-
-  if (!context.currentService) {
-    return context
-  }
-
-  if (key === SERVICE_ARRAY_KEY) {
+const SERVICE_KEY_VALUE_HANDLERS: Readonly<Record<string, ServiceKeyValueHandler>> = {
+  [SERVICE_ARRAY_KEY]: ({ value, indent, state }) => {
     if (isArrayStart(value)) {
-      return {
-        ...context,
-        inInterfacesArray: true,
-        indentLevel,
-      }
+      state.inInterfacesArray = true
+      state.interfaceArrayIndent = indent
+      state.inDependenciesArray = false
+      return
     }
 
-    const inlineArray = parseInlineArray(value)
-    if (inlineArray.length > 0) {
-      return context
-    }
-  }
+    // ignore inline interfaces array.
+    parseInlineArray(value)
+  },
 
-  if (key === DEPENDENCIES_KEY) {
+  [DEPENDENCIES_KEY]: ({ value, indent, acc, state }) => {
     if (isArrayStart(value)) {
-      return {
-        ...context,
-        inDependenciesArray: true,
-        indentLevel,
+      state.inDependenciesArray = true
+      state.dependenciesIndent = indent
+      acc.dependencies = []
+      return
+    }
+
+    const inline = parseInlineArray(value)
+    if (inline.length > 0) {
+      // Keep both places consistent (critical correctness).
+      const svc = acc.currentService
+      if (svc) {
+        svc.dependencies = inline
       }
+      acc.dependencies = [...inline]
     }
+  },
 
-    const inlineArray = parseInlineArray(value)
-    if (inlineArray.length > 0) {
-      return {
-        ...context,
-        currentService: {
-          ...context.currentService,
-          dependencies: inlineArray,
-        },
-      }
+  [REPOSITORY_KEY]: ({ value, acc }) => {
+    const svc = acc.currentService
+    if (!svc) {
+      return
     }
-  }
+    svc.repository = parseQuotedValue(value)
+  },
 
-  if (key === "repository") {
-    return {
-      ...context,
-      currentService: {
-        ...context.currentService,
-        repository: parseQuotedValue(value),
-      } as ServiceBuilder,
+  [OWNER_KEY]: ({ value, acc }) => {
+    const svc = acc.currentService
+    if (!svc) {
+      return
     }
-  }
+    svc.owner = parseQuotedValue(value)
+  },
 
-  if (key === "owner") {
-    return {
-      ...context,
-      currentService: {
-        ...context.currentService,
-        owner: parseQuotedValue(value),
-      } as ServiceBuilder,
+  [NAME_KEY]: ({ value, acc }) => {
+    const svc = acc.currentService
+    if (!svc) {
+      return
     }
-  }
-
-  return context
+    svc.name = parseQuotedValue(value)
+  },
 }
 
-function handleArrayItem(line: string, context: ParseContext, indentLevel: number): ParseContext {
-  if (context.inDependenciesArray && indentLevel > context.indentLevel) {
-    const item = parseArrayItem(line)
-    if (item) {
-      return {
-        ...context,
-        dependencies: [...context.dependencies, item],
-      }
-    }
+function handleServiceKeyValue(
+  key: string,
+  value: string,
+  indent: number,
+  acc: ServiceAccumulator,
+  state: EnvParseState,
+): void {
+  // Fast exit (no work without service)
+  if (!acc.currentService) {
+    return
   }
 
-  if (context.inInterfacesArray && line.trim().startsWith("- ")) {
-    const newContext = finishCurrentInterface(context)
-    return {
-      ...newContext,
-      currentInterface: {},
-      indentLevel,
-    }
+  const handler = SERVICE_KEY_VALUE_HANDLERS[key]
+  if (!handler) {
+    return
   }
 
-  return context
+  handler({ value, indent, acc, state })
 }
 
+function handleRuntimeKeyValue(
+  key: string,
+  value: string,
+  acc: ServiceAccumulator,
+): void {
+  const iface = acc.currentInterface
+  if (!iface) {
+    return
+  }
+
+  const rt = iface.runtime ?? { type: RUNTIME_TYPES.UNKNOWN, id: "" }
+  const parsed = parseQuotedValue(value)
+
+  const handlers: Readonly<Record<string, (v: string) => void>> = {
+    [TYPE_KEY]: (v) => {
+      iface.runtime = { ...rt, type: normalizeRuntimeType(v) }
+    },
+    [ID_KEY]: (v) => {
+      iface.runtime = { ...rt, id: v.trim() }
+    },
+  }
+
+  const handler = handlers[key]
+  if (!handler) {
+    return
+  }
+
+  handler(parsed)
+}
+
+function handleInterfacePropertyKeyValue(
+  key: string,
+  value: string,
+  acc: ServiceAccumulator,
+  state: EnvParseState,
+): void {
+  const iface = acc.currentInterface
+  if (!iface) {
+    return
+  }
+
+  const parsed = parseQuotedValue(value)
+
+  const handlers: Readonly<Record<string, (v: string) => void>> = {
+    [DOMAIN_KEY]: (v) => {
+      iface.domain = v
+      state.inRuntimeBlock = false
+      state.runtimeIndent = 0
+    },
+    [ENV_KEY]: (v) => {
+      iface.env = v
+      state.inRuntimeBlock = false
+      state.runtimeIndent = 0
+    },
+    [BRANCH_KEY]: (v) => {
+      iface.branch = v
+      state.inRuntimeBlock = false
+      state.runtimeIndent = 0
+    },
+    [RUNTIME_KEY]: () => {
+      // runtime: starts a nested object block when written as "runtime:" or "runtime: ["
+      // We treat both as block-start (legacy behavior).
+      state.inRuntimeBlock = true
+      state.runtimeIndent = state.interfaceArrayIndent
+    },
+  }
+
+  const handler = handlers[key]
+  if (!handler) {
+    return
+  }
+
+  handler(parsed)
+}
+
+function handleInterfaceKeyValue(
+  key: string,
+  value: string,
+  indent: number,
+  acc: ServiceAccumulator,
+  state: EnvParseState,
+): void {
+  if (key === RUNTIME_KEY && isArrayStart(value)) {
+    state.inRuntimeBlock = true
+    state.runtimeIndent = indent
+    return
+  }
+
+  if (state.inRuntimeBlock && indent > state.runtimeIndent) {
+    handleRuntimeKeyValue(key, value, acc)
+    return
+  }
+
+  handleInterfacePropertyKeyValue(key, value, acc, state)
+}
+
+function handleNewInterfaceItem(
+  trimmed: string,
+  indent: number,
+  acc: ServiceAccumulator,
+  state: EnvParseState,
+): void {
+  finishCurrentInterface(acc, state)
+
+  const match = trimmed.match(RE_INTERFACE_ITEM)
+  const key = match?.[1]
+  const raw = match?.[2]
+  const parsedValue = raw ? parseQuotedValue(raw.trim()) : undefined
+
+  const builder: InterfaceBuilder = {}
+
+  const setByKey: Readonly<Record<string, (b: InterfaceBuilder, v: string) => void>> = {
+    [DOMAIN_KEY]: (b, v) => {
+      b.domain = v
+    },
+    [ENV_KEY]: (b, v) => {
+      b.env = v
+    },
+    [BRANCH_KEY]: (b, v) => {
+      b.branch = v
+    },
+  }
+
+  const setter = key ? setByKey[key] : undefined
+  if (setter && parsedValue !== undefined) {
+    setter(builder, parsedValue)
+  }
+
+  acc.currentInterface = builder
+  state.interfaceArrayIndent = indent
+  state.inRuntimeBlock = false
+  state.runtimeIndent = 0
+}
+
+function handleDependenciesArrayItem(
+  trimmed: string,
+  indent: number,
+  acc: ServiceAccumulator,
+  state: EnvParseState,
+): void {
+  if (!state.inDependenciesArray) {
+    return
+  }
+
+  if (indent <= state.dependenciesIndent) {
+    return
+  }
+
+  const item = parseArrayItem(trimmed)
+  if (item === null) {
+    return
+  }
+
+  acc.dependencies.push(item)
+}
+
+/**
+ * Parses YAML string into structured service data
+ *
+ * @param yamlString - Raw YAML content to parse
+ * @returns Parsed services structure
+ */
 export function parseYaml(yamlString: string): ParsedYaml {
   const lines = yamlString.split("\n")
-  let context: ParseContext = {
-    indentLevel: 0,
-    currentService: null,
-    currentInterface: null,
-    inInterfacesArray: false,
-    inDependenciesArray: false,
-    inRuntimeBlock: false,
-    runtimeIndentLevel: 0,
-    services: [],
-    dependencies: [],
-  }
+  const state = createInitialState()
+  const acc = createAccumulator()
 
-  for (const line of lines) {
-    if (isCommentOrEmpty(line)) {
+  for (const rawLine of lines) {
+    if (isCommentOrEmpty(rawLine)) {
       continue
     }
 
-    const indentLevel = getIndentLevel(line)
-    const trimmed = line.trim()
+    const indent = getIndentLevel(rawLine)
+    const trimmed = rawLine.trim()
 
-    if (trimmed.startsWith("- name:") || (trimmed.startsWith("- ") && trimmed.includes("name:"))) {
-      context = handleServiceStart(trimmed, context)
-      context = {
-        ...context,
-        indentLevel: 2,
+    maybeExitBlocksOnIndent(indent, state)
+
+    if (isServiceStart(trimmed)) {
+      parseServiceStart(trimmed, acc, state)
+      continue
+    }
+
+    if (state.inInterfacesArray && trimmed.startsWith(ARRAY_ITEM_PREFIX)) {
+      handleNewInterfaceItem(trimmed, indent, acc, state)
+      continue
+    }
+
+    if (state.inDependenciesArray) {
+      const asItem = parseArrayItem(trimmed)
+      if (asItem !== null) {
+        handleDependenciesArrayItem(trimmed, indent, acc, state)
+        continue
       }
-      continue
-    }
-
-    if (context.inInterfacesArray && trimmed.startsWith("- ")) {
-      const newContext = finishCurrentInterface(context)
-      const interfaceItemMatch = trimmed.match(/^-\s+(\w+):\s*(.+)$/)
-      if (interfaceItemMatch) {
-        const [, key, value] = interfaceItemMatch
-        const parsedValue = parseQuotedValue(value.trim())
-        const newInterface: InterfaceBuilder = {}
-        if (key === "domain") {
-          newInterface.domain = parsedValue
-        } else if (key === "env") {
-          newInterface.env = parsedValue
-        } else if (key === "branch") {
-          newInterface.branch = parsedValue
-        }
-        context = {
-          ...newContext,
-          currentInterface: newInterface,
-          indentLevel,
-          inRuntimeBlock: false,
-          runtimeIndentLevel: 0,
-        }
-      } else {
-        context = {
-          ...newContext,
-          currentInterface: {},
-          indentLevel,
-          inRuntimeBlock: false,
-          runtimeIndentLevel: 0,
-        }
-      }
-      continue
-    }
-
-    if (context.inInterfacesArray && context.currentInterface && indentLevel > context.indentLevel) {
-      context = handleKeyValue(trimmed, context, indentLevel)
-      continue
-    }
-
-    const arrayItem = parseArrayItem(trimmed)
-    if (arrayItem !== null && !context.inInterfacesArray) {
-      context = handleArrayItem(trimmed, context, indentLevel)
-      continue
     }
 
     const kv = parseKeyValue(trimmed)
-    if (kv) {
-      context = handleKeyValue(trimmed, context, indentLevel)
-      if (kv.key !== SERVICE_ARRAY_KEY && kv.key !== DEPENDENCIES_KEY) {
-        context = {
-          ...context,
-          indentLevel,
-        }
-      }
+    if (!kv) {
       continue
+    }
+
+    if (state.inInterfacesArray && acc.currentInterface && indent > state.interfaceArrayIndent) {
+      handleInterfaceKeyValue(kv.key, kv.value, indent, acc, state)
+      continue
+    }
+
+    if (acc.currentService) {
+      handleServiceKeyValue(kv.key, kv.value, indent, acc, state)
     }
   }
 
-  context = finishCurrentInterface(context)
-  context = finishCurrentService(context)
+  finishCurrentService(acc, state)
 
   return {
-    services: context.services,
+    services: acc.services,
   }
 }
 
+/**
+ * Validates that data matches the expected service schema
+ *
+ * @param data - Data to validate
+ * @returns Validation result with error message if invalid
+ */
 export function validateSchema(data: unknown): ValidationResult {
   if (!data || typeof data !== "object") {
     return { valid: false, error: "YAML must be an object" }
@@ -502,7 +732,6 @@ export function validateSchema(data: unknown): ValidationResult {
 
   for (let i = 0; i < dataObj.services.length; i++) {
     const service = dataObj.services[i]
-
     if (!service || typeof service !== "object") {
       return { valid: false, error: `Service at index ${i} is not a valid object` }
     }
@@ -514,17 +743,22 @@ export function validateSchema(data: unknown): ValidationResult {
     }
 
     if (typeof serviceObj.owner !== "string" || serviceObj.owner.length === 0) {
-      return { valid: false, error: `Service "${serviceObj.name}" is missing required field: owner` }
+      return {
+        valid: false,
+        error: `Service "${serviceObj.name}" is missing required field: owner`,
+      }
     }
 
     if (serviceObj.interfaces !== undefined) {
       if (!Array.isArray(serviceObj.interfaces)) {
-        return { valid: false, error: `Service "${serviceObj.name}" interfaces must be an array` }
+        return {
+          valid: false,
+          error: `Service "${serviceObj.name}" interfaces must be an array`,
+        }
       }
 
       for (let j = 0; j < serviceObj.interfaces.length; j++) {
         const iface = serviceObj.interfaces[j]
-
         if (!iface || typeof iface !== "object") {
           return {
             valid: false,
@@ -541,12 +775,12 @@ export function validateSchema(data: unknown): ValidationResult {
           }
         }
 
-        const validEnvs = ["production", "staging", "development"]
         if (ifaceObj.env !== undefined && typeof ifaceObj.env === "string") {
-          if (!validEnvs.includes(ifaceObj.env.toLowerCase())) {
-          return {
-            valid: false,
-              error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid env. Must be one of: ${validEnvs.join(", ")}`,
+          const env = ifaceObj.env.toLowerCase() as EnvironmentType
+          if (!VALID_ENV_TYPES.has(env)) {
+            return {
+              valid: false,
+              error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid env. Must be one of: ${Array.from(VALID_ENV_TYPES).join(", ")}`,
             }
           }
         }
@@ -560,13 +794,12 @@ export function validateSchema(data: unknown): ValidationResult {
           }
 
           const runtimeObj = ifaceObj.runtime as Record<string, unknown>
-          const validRuntimeTypes = ["ec2", "vm", "k8s", "lambda", "container", "paas", "unknown"]
-          
+
           if (runtimeObj.type !== undefined) {
-            if (typeof runtimeObj.type !== "string" || !validRuntimeTypes.includes(runtimeObj.type)) {
+            if (typeof runtimeObj.type !== "string" || !VALID_RUNTIME_TYPES.has(runtimeObj.type as RuntimeType)) {
               return {
                 valid: false,
-                error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid runtime.type. Must be one of: ${validRuntimeTypes.join(", ")}`,
+                error: `Service "${serviceObj.name}" interface "${ifaceObj.domain}" has invalid runtime.type. Must be one of: ${Array.from(VALID_RUNTIME_TYPES).join(", ")}`,
               }
             }
           }
