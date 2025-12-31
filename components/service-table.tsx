@@ -1,22 +1,35 @@
 "use client"
 
 import { memo, useState, useMemo, useEffect, useCallback, useRef } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table"
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { useVirtualizer } from "@tanstack/react-virtual"
+import { DndContext, closestCenter } from "@dnd-kit/core"
+import { SortableContext, horizontalListSortingStrategy } from "@dnd-kit/sortable"
 import { Copy, Download, ExternalLink, Search, Terminal } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import {
-  TableProvider,
-  TableHeader,
-  TableHeaderGroup,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
-} from "@/components/kibo-ui/table"
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DraggableHeader } from "@/components/table/draggable-header"
+import { ResizeHandle } from "@/components/table/resize-handle"
+import { VirtualRow, TableSkeleton, EmptyState, NoResults, type TableColumnMeta } from "@/components/table/core"
+import { useTableSettings } from "@/hooks/use-table-settings"
+import { useStickyColumns } from "@/hooks/use-sticky-columns"
+import { useTableDnd } from "@/hooks/use-table-dnd"
+import { useTableScroll } from "@/hooks/use-table-scroll"
+import { STICKY_COLUMNS, SORT_FIELD_MAPS, NON_REORDERABLE_COLUMNS, ROW_HEIGHTS } from "@/utils/table-configs"
 import { parseYaml, type Service } from "@/lib/yaml-utils"
+import { cn } from "@/lib/utils"
+
+const TABLE_ID = "services" as const
+const ROW_HEIGHT = ROW_HEIGHTS[TABLE_ID]
+const NON_CLICKABLE_COLUMNS = new Set(["actions"])
 
 interface ServiceTableProps {
   readonly yamlContent: string
@@ -32,6 +45,7 @@ interface EnvironmentInfo {
 }
 
 interface GroupedService {
+  readonly id: string
   readonly serviceIndex: number
   readonly name: string
   readonly owner: string
@@ -58,12 +72,6 @@ const RUNTIME_LABELS: Record<string, string> = {
   container: "CTR",
   paas: "PAAS",
 } as const
-
-/** 
- * Single source of truth for column layout.
- * Used by both header and body rows via CSS Grid.
- */
-const GRID_TEMPLATE = "minmax(180px, 1fr) 140px 110px 90px minmax(120px, 150px) 72px"
 
 function normalizeEnv(env: string | null): "production" | "staging" | "development" | null {
   if (!env) return null
@@ -108,6 +116,7 @@ function groupServicesByService(services: readonly Service[]): readonly GroupedS
     const sortedEnvs = sortEnvironments(environments)
 
     return {
+      id: `service-${serviceIndex}`,
       serviceIndex,
       name: service.name,
       owner: service.owner,
@@ -309,7 +318,6 @@ const RowActions = memo(function RowActions({ service }: RowActionsProps) {
 
   return (
     <TooltipProvider delayDuration={150}>
-      {/* Fixed-size container - always present, only opacity changes */}
       <div className="flex items-center justify-end gap-0.5 h-5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
         {service.repository && (
           <Tooltip>
@@ -370,66 +378,24 @@ const RowActions = memo(function RowActions({ service }: RowActionsProps) {
   )
 })
 
-const columns: ColumnDef<GroupedService>[] = [
-  {
-    id: "name",
-    accessorKey: "name",
-    header: () => <span>Service</span>,
-    cell: ({ row }) => (
-      <div className="flex items-center h-5">
-        <span className="text-[13px] font-medium text-foreground leading-none truncate">
-          {row.original.name}
-        </span>
-      </div>
-    ),
-  },
-  {
-    id: "environments",
-    header: () => <span>Env</span>,
-    cell: ({ row }) => <EnvBadges environments={row.original.environments} />,
-  },
-  {
-    id: "domains",
-    header: () => <span>Domains</span>,
-    cell: ({ row }) => (
-      <DomainsAffordance
-        environments={row.original.environments}
-        domainsCount={row.original.domainsCount}
-      />
-    ),
-  },
-  {
-    id: "runtime",
-    header: () => <span>Runtime</span>,
-    cell: ({ row }) => <RuntimeFootprint runtimeFootprint={row.original.runtimeFootprint} />,
-  },
-  {
-    id: "owner",
-    accessorKey: "owner",
-    header: () => <span>Owner</span>,
-    cell: ({ row }) => (
-      <div className="flex items-center h-5">
-        <span className="text-[11px] text-muted-foreground/80 truncate leading-none">
-          {row.original.owner}
-        </span>
-      </div>
-    ),
-  },
-  {
-    id: "actions",
-    header: () => null,
-    cell: ({ row }) => <RowActions service={row.original} />,
-  },
-]
-
 export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTableProps) {
   const [searchTerm, setSearchTerm] = useState(initialSearchQuery)
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [loading, setLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const parentRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    setSearchTerm(initialSearchQuery)
-  }, [initialSearchQuery])
+  // Table settings
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    columnSizing,
+    setColumnSizing,
+    columnOrder,
+    setColumnOrder,
+  } = useTableSettings({ tableId: TABLE_ID })
 
+  // Parse and group services
   const groupedServices = useMemo(() => {
     try {
       const parsed = parseYaml(yamlContent)
@@ -439,6 +405,7 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
     }
   }, [yamlContent])
 
+  // Filter services
   const filteredServices = useMemo((): GroupedService[] => {
     if (!searchTerm.trim()) return [...groupedServices]
 
@@ -449,12 +416,155 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
       .map(({ service }) => service)
   }, [groupedServices, searchTerm])
 
-  const handleRowAction = useCallback((service: GroupedService) => {
-    if (service.repository) {
-      window.open(service.repository, "_blank", "noopener,noreferrer")
-    }
-  }, [])
+  // Column definitions with meta
+  const columns = useMemo<ColumnDef<GroupedService>[]>(
+    () => [
+      {
+        id: "name",
+        accessorKey: "name",
+        header: () => <span>Service</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center h-5">
+            <span className="text-[13px] font-medium text-foreground leading-none truncate">
+              {row.original.name}
+            </span>
+          </div>
+        ),
+        size: 180,
+        minSize: 120,
+        maxSize: 400,
+        meta: {
+          sticky: true,
+          headerLabel: "Service",
+        } as TableColumnMeta,
+      },
+      {
+        id: "environments",
+        header: () => <span>Env</span>,
+        cell: ({ row }) => <EnvBadges environments={row.original.environments} />,
+        size: 140,
+        minSize: 100,
+        maxSize: 200,
+        meta: {
+          headerLabel: "Env",
+        } as TableColumnMeta,
+      },
+      {
+        id: "domains",
+        header: () => <span>Domains</span>,
+        cell: ({ row }) => (
+          <DomainsAffordance
+            environments={row.original.environments}
+            domainsCount={row.original.domainsCount}
+          />
+        ),
+        size: 110,
+        minSize: 80,
+        maxSize: 150,
+        meta: {
+          headerLabel: "Domains",
+        } as TableColumnMeta,
+      },
+      {
+        id: "runtime",
+        header: () => <span>Runtime</span>,
+        cell: ({ row }) => <RuntimeFootprint runtimeFootprint={row.original.runtimeFootprint} />,
+        size: 90,
+        minSize: 70,
+        maxSize: 120,
+        meta: {
+          headerLabel: "Runtime",
+        } as TableColumnMeta,
+      },
+      {
+        id: "owner",
+        accessorKey: "owner",
+        header: () => <span>Owner</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center h-5">
+            <span className="text-[11px] text-muted-foreground/80 truncate leading-none">
+              {row.original.owner}
+            </span>
+          </div>
+        ),
+        size: 150,
+        minSize: 120,
+        maxSize: 200,
+        meta: {
+          headerLabel: "Owner",
+        } as TableColumnMeta,
+      },
+      {
+        id: "actions",
+        header: () => null,
+        cell: ({ row }) => <RowActions service={row.original} />,
+        size: 72,
+        enableResizing: false,
+        meta: {
+          headerLabel: "",
+        } as TableColumnMeta,
+      },
+    ],
+    [],
+  )
 
+  // Table instance
+  const table = useReactTable({
+    getRowId: (row) => row.id,
+    data: filteredServices,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    onRowSelectionChange: setRowSelection,
+    onColumnVisibilityChange: setColumnVisibility,
+    onColumnSizingChange: setColumnSizing,
+    onColumnOrderChange: setColumnOrder,
+    enableColumnResizing: true,
+    columnResizeMode: "onChange",
+    state: {
+      rowSelection,
+      columnVisibility,
+      columnSizing,
+      columnOrder,
+    },
+    meta: {
+      callbacks: {
+        onCellClick: useCallback((rowId: string, columnId: string) => {
+          const row = filteredServices.find((s) => s.id === rowId)
+          if (row && columnId === "name" && row.repository) {
+            window.open(row.repository, "_blank", "noopener,noreferrer")
+          }
+        }, [filteredServices]),
+      },
+    },
+  })
+
+  // Sticky columns
+  const { getStickyStyle, getStickyClassName } = useStickyColumns({
+    columnVisibility,
+    table,
+    loading,
+    stickyColumns: STICKY_COLUMNS[TABLE_ID],
+  })
+
+  // Drag and drop
+  const { sensors, handleDragEnd } = useTableDnd(table)
+
+  // Table scroll
+  const tableScroll = useTableScroll({
+    useColumnWidths: true,
+    startFromColumn: STICKY_COLUMNS[TABLE_ID].length,
+  })
+
+  // Virtualizer
+  const { rows } = table.getRowModel()
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  })
+
+  // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
       e.preventDefault()
@@ -470,14 +580,15 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleKeyDown])
 
+  // CSV export
   const exportToCsv = useCallback(() => {
-    const rows: string[][] = []
+    const csvRows: string[][] = []
     for (const service of filteredServices) {
       if (service.environments.length === 0) {
-        rows.push([service.name, service.owner, service.repository, "—", "—", "—", "—", "—"])
+        csvRows.push([service.name, service.owner, service.repository, "—", "—", "—", "—", "—"])
       } else {
         for (const env of service.environments) {
-          rows.push([
+          csvRows.push([
             service.name,
             service.owner,
             service.repository,
@@ -493,7 +604,7 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
 
     const csvContent = [
       ["Service", "Owner", "Repository", "Domain", "Environment", "Branch", "Runtime Type", "Runtime ID"].join(","),
-      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+      ...csvRows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
     ].join("\n")
 
     const blob = new Blob([csvContent], { type: "text/csv" })
@@ -508,6 +619,57 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value)
   }, [])
+
+  const handleCellClick = useCallback(
+    (rowId: string, columnId: string) => {
+      const row = filteredServices.find((s) => s.id === rowId)
+      if (row && columnId === "name" && row.repository) {
+        window.open(row.repository, "_blank", "noopener,noreferrer")
+      }
+    },
+    [filteredServices],
+  )
+
+  const visibleColumns = table.getAllLeafColumns().filter((col) => col.getIsVisible())
+  const reorderableColumnIds = visibleColumns
+    .map((col) => col.id)
+    .filter((id) => !NON_REORDERABLE_COLUMNS[TABLE_ID].has(id))
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" aria-hidden="true" />
+            <Input
+              ref={searchInputRef}
+              placeholder="Search... (Press / to focus)"
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className="pl-8 h-9 text-sm dark:border-white/5 border-black/10"
+              aria-label="Search services"
+              disabled
+            />
+          </div>
+          <button
+            type="button"
+            disabled
+            className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:border-white/5 border-black/10 border"
+          >
+            <Download className="h-3.5 w-3.5 inline mr-1.5" />
+            CSV
+          </button>
+        </div>
+        <TableSkeleton
+          columns={columns}
+          columnVisibility={columnVisibility}
+          columnSizing={columnSizing}
+          columnOrder={columnOrder}
+          stickyColumnIds={STICKY_COLUMNS[TABLE_ID].map((c) => c.id)}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
@@ -541,27 +703,109 @@ export function ServiceTable({ yamlContent, initialSearchQuery = "" }: ServiceTa
       </div>
 
       {/* Table */}
-      <TableProvider
-        data={filteredServices}
-        columns={columns}
-        onRowAction={handleRowAction}
-        gridTemplate={GRID_TEMPLATE}
-      >
-        <TableHeader>
-          {({ headerGroup }) => (
-            <TableHeaderGroup headerGroup={headerGroup}>
-              {({ header }) => <TableHead header={header} />}
-            </TableHeaderGroup>
-          )}
-        </TableHeader>
-        <TableBody>
-          {({ row, rowIndex }) => (
-            <TableRow row={row} rowIndex={rowIndex}>
-              {({ cell }) => <TableCell cell={cell} />}
-            </TableRow>
-          )}
-        </TableBody>
-      </TableProvider>
+      {filteredServices.length === 0 ? (
+        <NoResults onClear={() => setSearchTerm("")} />
+      ) : (
+        <DndContext
+          id={`services-table-dnd-${TABLE_ID}`}
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <div
+            ref={(el) => {
+              parentRef.current = el
+              tableScroll.containerRef.current = el
+            }}
+            className="overflow-auto overscroll-x-none"
+          >
+            <Table>
+              <TableHeader className="sticky top-0 z-20 bg-background border-b dark:border-white/5 border-black/10">
+                <TableRow className="h-9 hover:bg-transparent flex items-center">
+                  <SortableContext items={reorderableColumnIds} strategy={horizontalListSortingStrategy}>
+                    {table.getHeaderGroups().map((headerGroup) =>
+                      headerGroup.headers.map((header) => {
+                        const columnId = header.column.id
+                        const meta = header.column.columnDef.meta as TableColumnMeta | undefined
+                        const isSticky = meta?.sticky ?? false
+                        const isActions = columnId === "actions"
+                        const isReorderable = !NON_REORDERABLE_COLUMNS[TABLE_ID].has(columnId)
+                        const headerStyle = {
+                          width: header.getSize(),
+                          ...getStickyStyle(columnId),
+                        }
+                        const headerClassName = getStickyClassName(
+                          columnId,
+                          cn(
+                            "group/header relative h-full px-4 flex items-center",
+                            isActions && "justify-center md:sticky md:right-0 bg-background z-10",
+                            isSticky && "bg-background z-10",
+                          ),
+                        )
+
+                        return isReorderable ? (
+                          <DraggableHeader
+                            key={header.id}
+                            id={columnId}
+                            style={headerStyle}
+                            className={headerClassName}
+                          >
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(header.column.columnDef.header, header.getContext())}
+                            </div>
+                            <ResizeHandle header={header} />
+                          </DraggableHeader>
+                        ) : (
+                          <TableHead
+                            key={header.id}
+                            style={headerStyle}
+                            className={headerClassName}
+                          >
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(header.column.columnDef.header, header.getContext())}
+                            </div>
+                            <ResizeHandle header={header} />
+                          </TableHead>
+                        )
+                      }),
+                    )}
+                  </SortableContext>
+                </TableRow>
+              </TableHeader>
+              <TableBody
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  position: "relative",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow: { index: number; start: number }) => {
+                  const row = rows[virtualRow.index]
+                  return (
+                    <VirtualRow
+                      key={row.id}
+                      row={row}
+                      virtualStart={virtualRow.start}
+                      rowHeight={ROW_HEIGHT}
+                      getStickyStyle={getStickyStyle}
+                      getStickyClassName={getStickyClassName}
+                      nonClickableColumns={NON_CLICKABLE_COLUMNS}
+                      onCellClick={handleCellClick}
+                      columnSizing={columnSizing}
+                      columnOrder={columnOrder}
+                      columnVisibility={columnVisibility}
+                      isSelected={rowSelection[row.id] === true}
+                    />
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </DndContext>
+      )}
     </div>
   )
 }
