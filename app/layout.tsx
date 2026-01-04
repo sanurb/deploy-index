@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Provider } from "jotai"
 import { ThemeProvider } from "@/components/theme-provider"
+import { Providers } from "./providers"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -52,7 +53,9 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider defaultTheme="system" storageKey="service-inventory-theme" enableSystem>
           <Provider>
-            {children}
+            <Providers>
+              {children}
+            </Providers>
           </Provider>
         </ThemeProvider>
         <Analytics />
