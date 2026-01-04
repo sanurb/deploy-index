@@ -39,6 +39,14 @@ Normative language
 - Clever code MUST NOT ship if it increases time-to-understand.
 - Prefer simple, boring patterns that scale across teams.
 
+0.5 Invariants-first modeling
+- Core domain types MUST encode invariants so invalid values cannot be constructed accidentally.
+- Parsing/validation MUST happen at boundaries, producing refined types or typed errors.
+- Domain code MUST operate only on validated types, not on raw primitives (string/number/any).
+- Avoid “primitive obsession”: use value objects / branded types / opaque types for identifiers, money, timestamps, percentages, non-empty strings, bounded integers, etc.
+- State machines MUST be modeled explicitly (tagged unions or classes) so impossible transitions are impossible to express.
+- Temporal coupling MUST be eliminated: APIs MUST NOT require callers to remember call order to be correct.
+
 A1) Constants Over Magic Numbers and domain vocabulary
 
 - You MUST NOT introduce unexplained literals inside business logic.
@@ -97,6 +105,8 @@ const byStatus = {
 
 (byStatus[status] ?? renderUnknown)();
 ```
+- Group declarations into responsibility blocks.
+- Team consistency overrides personal style; formatter is the source of truth.
 
 A4) Expressions: one idea per line, one concern per statement
 
@@ -140,6 +150,7 @@ You MUST NOT comment when
 Required comment types
 - Module header (for non-trivial modules): responsibility, boundaries, invariants, dependencies.
 - Public API contracts: inputs, outputs, errors, side effects, complexity notes if relevant.
+- Invariants belong in code first, comments second, Comments MAY explain why the invariant exists, but MUST NOT be the only place the invariant lives.
 
 TODO/DEBT format
 - MUST be actionable and tracked:
@@ -191,6 +202,7 @@ Rules
   - validate inputs at boundaries,
   - avoid “boolean parameter traps” (use options object or enum),
   - avoid ambiguous defaults.
+- Constructors MUST be private when invariants exist; creation MUST go through factory/parse functions that validate.
 
 Error handling
 - Errors MUST be:
