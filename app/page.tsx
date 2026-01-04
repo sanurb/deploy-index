@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useAtomValue } from "jotai"
+import Image from "next/image"
 import { ServiceTable } from "@/components/service-table/index"
 import { YamlEditor } from "@/components/yaml-editor"
 import { UrlViewer } from "@/components/url-viewer"
@@ -100,14 +101,44 @@ function PageContent() {
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-lg font-semibold text-foreground">Service Inventory</h1>
-              <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+          <div className="flex items-center justify-between gap-3">
+            {/* Left */}
+            <div className="flex min-w-0 items-center gap-3">
+              {/* Icon (fixed size, responsive-friendly) */}
+              <Image
+                src="/icon.svg"
+                alt="Deploy Index"
+                width={32}
+                height={32}
+                className="h-8 w-8 shrink-0"
+                priority
+              />
+
+              {/* Wordmark */}
+              <div className="min-w-0">
+                <h1
+                  className={[
+                    "truncate leading-none text-foreground",
+                    "font-sans",
+                    "text-base sm:text-lg md:text-xl",
+                    "tracking-tight",
+                  ].join(" ")}
+                >
+                  <span className="font-extrabold">Deploy</span>
+                  <span className="font-normal">Index</span>
+                </h1>
+              </div>
+
+              {/* Shortcut (hide on small, don’t shrink) */}
+              <kbd className="hidden shrink-0 sm:inline-flex h-6 select-none items-center gap-1 rounded border bg-muted px-2 font-mono text-[11px] font-medium text-muted-foreground">
                 <span className="text-xs">⌘</span>K
               </kbd>
             </div>
-            <ModeToggle />
+
+            {/* Right */}
+            <div className="shrink-0">
+              <ModeToggle />
+            </div>
           </div>
         </div>
       </header>

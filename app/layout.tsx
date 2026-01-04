@@ -10,7 +10,7 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Service Inventory - Zero-Backend Excel Replacement",
+  title: "Deploy Index",
   description:
     "Git-friendly service catalog with no database, no infrastructure dependencies. YAML-powered service inventory for PMs, DevOps, and developers.",
   generator: "v0.app",
