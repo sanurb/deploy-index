@@ -30,7 +30,11 @@ export function AppHeader() {
         ) : (
           <div className="h-8 min-w-8 sm:h-9 sm:min-w-auto" />
         )}
-        <UserButton size="icon" />
+        {mounted ? (
+          <UserButton size="icon" />
+        ) : (
+          <div className="size-9 rounded-full" />
+        )}
       </div>
     </header>
   );
