@@ -1,7 +1,15 @@
-"use client"
+"use client";
 
-import { useState, useMemo, useEffect } from "react"
-import { useAtomValue } from "jotai"
+import { useAtomValue } from "jotai";
+import {
+  ExternalLink,
+  FileText,
+  GitBranch,
+  Globe,
+  Package,
+  User,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CommandDialog,
   CommandEmpty,
@@ -9,41 +17,56 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command"
-import { parseYaml } from "@/lib/yaml-utils"
-import { Globe, Package, User, GitBranch, ExternalLink, FileText } from "lucide-react"
-import { contentAtom } from "@/lib/state/draft-atoms"
+} from "@/components/ui/command";
+import { contentAtom } from "@/lib/state/draft-atoms";
+import { parseYaml } from "@/lib/yaml-utils";
 
 interface CommandPaletteProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onNavigate: (tab: string) => void
-  onSearch: (query: string) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onNavigate: (tab: string) => void;
+  onSearch: (query: string) => void;
 }
 
-export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: CommandPaletteProps) {
-  const yamlContent = useAtomValue(contentAtom)
-  const [searchQuery, setSearchQuery] = useState("")
+export function CommandPalette({
+  open,
+  onOpenChange,
+  onNavigate,
+  onSearch,
+}: CommandPaletteProps) {
+  const yamlContent = useAtomValue(contentAtom);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Parse services and create searchable index
   const searchIndex = useMemo(() => {
     try {
-      const parsed = parseYaml(yamlContent)
-      const services = parsed.services || []
+      const parsed = parseYaml(yamlContent);
+      const services = parsed.services || [];
 
       const domains: Array<{
-        type: string
-        value: string
-        service: string
-        env: string
-        branch: string
-        repo: string
-      }> = []
-      const serviceNames: Array<{ type: string; value: string; owner: string; repo: string }> = []
-      const owners: Array<{ type: string; value: string; services: string[] }> = []
-      const branches: Array<{ type: string; value: string; service: string; domain: string }> = []
+        type: string;
+        value: string;
+        service: string;
+        env: string;
+        branch: string;
+        repo: string;
+      }> = [];
+      const serviceNames: Array<{
+        type: string;
+        value: string;
+        owner: string;
+        repo: string;
+      }> = [];
+      const owners: Array<{ type: string; value: string; services: string[] }> =
+        [];
+      const branches: Array<{
+        type: string;
+        value: string;
+        service: string;
+        domain: string;
+      }> = [];
 
-      const ownerMap = new Map<string, string[]>()
+      const ownerMap = new Map<string, string[]>();
 
       services.forEach((service: any) => {
         // Index service names
@@ -52,14 +75,14 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
           value: service.name || "",
           owner: service.owner || "",
           repo: service.repository || "",
-        })
+        });
 
         // Index owners
         if (service.owner) {
           if (!ownerMap.has(service.owner)) {
-            ownerMap.set(service.owner, [])
+            ownerMap.set(service.owner, []);
           }
-          ownerMap.get(service.owner)!.push(service.name || "")
+          ownerMap.get(service.owner)!.push(service.name || "");
         }
 
         // Index domains (interfaces) as first-class citizens
@@ -73,7 +96,7 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
                 env: iface.env || "unknown",
                 branch: iface.branch || "unknown",
                 repo: service.repository || "",
-              })
+              });
             }
 
             // Index branches
@@ -83,11 +106,11 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
                 value: iface.branch,
                 service: service.name || "",
                 domain: iface.domain || "",
-              })
+              });
             }
-          })
+          });
         }
-      })
+      });
 
       // Convert owner map to array
       ownerMap.forEach((services, owner) => {
@@ -95,14 +118,14 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
           type: "owner",
           value: owner,
           services,
-        })
-      })
+        });
+      });
 
-      return { domains, serviceNames, owners, branches }
+      return { domains, serviceNames, owners, branches };
     } catch {
-      return { domains: [], serviceNames: [], owners: [], branches: [] }
+      return { domains: [], serviceNames: [], owners: [], branches: [] };
     }
-  }, [yamlContent])
+  }, [yamlContent]);
 
   // Filter and rank results based on search query
   const results = useMemo(() => {
@@ -112,10 +135,10 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
         services: searchIndex.serviceNames.slice(0, 5),
         owners: searchIndex.owners.slice(0, 3),
         branches: searchIndex.branches.slice(0, 3),
-      }
+      };
     }
 
-    const query = searchQuery.toLowerCase()
+    const query = searchQuery.toLowerCase();
 
     const filteredDomains = searchIndex.domains
       .filter(
@@ -123,56 +146,58 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
           (d.value || "").toLowerCase().includes(query) ||
           (d.service || "").toLowerCase().includes(query) ||
           (d.env || "").toLowerCase().includes(query) ||
-          (d.branch || "").toLowerCase().includes(query),
+          (d.branch || "").toLowerCase().includes(query)
       )
-      .slice(0, 5)
+      .slice(0, 5);
 
     const filteredServices = searchIndex.serviceNames
       .filter(
         (s) =>
           (s.value || "").toLowerCase().includes(query) ||
           (s.owner || "").toLowerCase().includes(query) ||
-          (s.repo || "").toLowerCase().includes(query),
+          (s.repo || "").toLowerCase().includes(query)
       )
-      .slice(0, 5)
+      .slice(0, 5);
 
-    const filteredOwners = searchIndex.owners.filter((o) => (o.value || "").toLowerCase().includes(query)).slice(0, 3)
+    const filteredOwners = searchIndex.owners
+      .filter((o) => (o.value || "").toLowerCase().includes(query))
+      .slice(0, 3);
 
     const filteredBranches = searchIndex.branches
       .filter(
         (b) =>
           (b.value || "").toLowerCase().includes(query) ||
           (b.service || "").toLowerCase().includes(query) ||
-          (b.domain || "").toLowerCase().includes(query),
+          (b.domain || "").toLowerCase().includes(query)
       )
-      .slice(0, 3)
+      .slice(0, 3);
 
     return {
       domains: filteredDomains,
       services: filteredServices,
       owners: filteredOwners,
       branches: filteredBranches,
-    }
-  }, [searchQuery, searchIndex])
+    };
+  }, [searchQuery, searchIndex]);
 
   const hasResults =
     results.domains.length > 0 ||
     results.services.length > 0 ||
     results.owners.length > 0 ||
-    results.branches.length > 0
+    results.branches.length > 0;
 
   useEffect(() => {
     if (!open) {
-      setSearchQuery("")
+      setSearchQuery("");
     }
-  }, [open])
+  }, [open]);
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog onOpenChange={onOpenChange} open={open}>
       <CommandInput
+        onValueChange={setSearchQuery}
         placeholder="Search domains, services, branches, owners..."
         value={searchQuery}
-        onValueChange={setSearchQuery}
       />
       <CommandList>
         {!hasResults && <CommandEmpty>No results found.</CommandEmpty>}
@@ -183,14 +208,14 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
               <CommandItem
                 key={`domain-${i}`}
                 onSelect={() => {
-                  onSearch(domain.value)
-                  onOpenChange(false)
+                  onSearch(domain.value);
+                  onOpenChange(false);
                 }}
               >
                 <Globe className="mr-2 h-4 w-4 text-blue-600" />
                 <div className="flex-1">
                   <div className="font-medium">{domain.value}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-muted-foreground text-xs">
                     {domain.service} · {domain.env} · {domain.branch}
                   </div>
                 </div>
@@ -205,14 +230,18 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
               <CommandItem
                 key={`service-${i}`}
                 onSelect={() => {
-                  onSearch(service.value)
-                  onOpenChange(false)
+                  onSearch(service.value);
+                  onOpenChange(false);
                 }}
               >
                 <Package className="mr-2 h-4 w-4 text-green-600" />
                 <div className="flex-1">
                   <div className="font-medium">{service.value}</div>
-                  {service.owner && <div className="text-xs text-muted-foreground">{service.owner}</div>}
+                  {service.owner && (
+                    <div className="text-muted-foreground text-xs">
+                      {service.owner}
+                    </div>
+                  )}
                 </div>
               </CommandItem>
             ))}
@@ -225,14 +254,14 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
               <CommandItem
                 key={`branch-${i}`}
                 onSelect={() => {
-                  onSearch(branch.value)
-                  onOpenChange(false)
+                  onSearch(branch.value);
+                  onOpenChange(false);
                 }}
               >
                 <GitBranch className="mr-2 h-4 w-4 text-purple-600" />
                 <div className="flex-1">
                   <div className="font-medium">{branch.value}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-muted-foreground text-xs">
                     {branch.service} · {branch.domain}
                   </div>
                 </div>
@@ -247,14 +276,16 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
               <CommandItem
                 key={`owner-${i}`}
                 onSelect={() => {
-                  onSearch(owner.value)
-                  onOpenChange(false)
+                  onSearch(owner.value);
+                  onOpenChange(false);
                 }}
               >
                 <User className="mr-2 h-4 w-4 text-orange-600" />
                 <div className="flex-1">
                   <div className="font-medium">{owner.value}</div>
-                  <div className="text-xs text-muted-foreground">{owner.services.length} services</div>
+                  <div className="text-muted-foreground text-xs">
+                    {owner.services.length} services
+                  </div>
                 </div>
               </CommandItem>
             ))}
@@ -265,8 +296,8 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
           <CommandItem
             key="action-editor"
             onSelect={() => {
-              onNavigate("editor")
-              onOpenChange(false)
+              onNavigate("editor");
+              onOpenChange(false);
             }}
           >
             <FileText className="mr-2 h-4 w-4" />
@@ -275,8 +306,8 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
           <CommandItem
             key="action-viewer"
             onSelect={() => {
-              onNavigate("viewer")
-              onOpenChange(false)
+              onNavigate("viewer");
+              onOpenChange(false);
             }}
           >
             <ExternalLink className="mr-2 h-4 w-4" />
@@ -285,5 +316,5 @@ export function CommandPalette({ open, onOpenChange, onNavigate, onSearch }: Com
         </CommandGroup>
       </CommandList>
     </CommandDialog>
-  )
+  );
 }

@@ -1,21 +1,25 @@
-import type { Monaco } from "@monaco-editor/react"
-import { createYamlAutocompleteProvider } from "./yaml-autocomplete"
+import type { Monaco } from "@monaco-editor/react";
+import { createYamlAutocompleteProvider } from "./yaml-autocomplete";
 
-let providerRegistered = false
+let providerRegistered = false;
 
 export function setupYamlLanguage(monaco: Monaco): void {
-  const languages = monaco.languages.getLanguages()
-  const yamlLanguage = languages.find((lang: { id: string }) => lang.id === "yaml")
+  const languages = monaco.languages.getLanguages();
+  const yamlLanguage = languages.find(
+    (lang: { id: string }) => lang.id === "yaml"
+  );
 
   if (!yamlLanguage) {
-    return
+    return;
   }
 
   if (providerRegistered) {
-    return
+    return;
   }
 
-  monaco.languages.registerCompletionItemProvider("yaml", createYamlAutocompleteProvider())
-  providerRegistered = true
+  monaco.languages.registerCompletionItemProvider(
+    "yaml",
+    createYamlAutocompleteProvider()
+  );
+  providerRegistered = true;
 }
-

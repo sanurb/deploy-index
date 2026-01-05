@@ -5,7 +5,7 @@ export const ENV_ORDER: readonly ["production", "staging", "development"] = [
   "production",
   "staging",
   "development",
-]
+];
 
 /**
  * Environment labels for display
@@ -14,7 +14,7 @@ export const ENV_LABELS = {
   production: "PROD",
   staging: "STAGE",
   development: "DEV",
-} as const
+} as const;
 
 /**
  * Runtime type labels for display
@@ -26,11 +26,10 @@ export const RUNTIME_LABELS: Readonly<Record<string, string>> = {
   lambda: "λ",
   container: "CTR",
   paas: "PAAS",
-} as const
+} as const;
 
 /**
  * Table configuration constants
  */
-export const TABLE_ID = "services" as const
-export const NON_CLICKABLE_COLUMNS = new Set(["actions"])
-
+export const TABLE_ID = "services" as const;
+export const NON_CLICKABLE_COLUMNS = new Set(["actions"]);

@@ -1,155 +1,152 @@
-# Active Development Context
+# Active Context
 
-## Current Work Focus:
-* **Active Step:** Step 3 — Backend Integration
-* **Scope:** ElysiaJS + oRPC with **Drizzle ORM as the sole data-access layer**
-* **Explicit Exclusion:** The Nile SDK (`@niledatabase/server`) is **not used for queries**. All data access goes through Drizzle ORM against Nile-integrated PostgreSQL tables.
+**Last Updated:** 2026-01-04  
+**Current Focus:** Project Status Assessment & Planning
 
-## Tenant Isolation Enforcement (By Construction)
+---
 
-Tenant isolation is **correct-by-construction**. The invariant is:
+## Current Work Focus
 
-1. Every request **MUST** resolve: `tenantSlug` → `tenantId` → `membership`
-2. Tenant identity comes from the **URL** (`/t/:tenantSlug/*`), not headers
-3. Membership is derived from Better-Auth session data (`active_organization_id` on session)
-4. **No repository or query may exist without an explicit `tenantId`**
+**Status:** Planning phase complete, ready for implementation
 
-This means:
-- Tenant-scoped routes fail fast if tenant cannot be resolved
-- Tenant-scoped routes fail fast if user is not a member of that tenant
-- All tenant-scoped repositories require `tenantId` at construction time
-- There is no global DB handle for tenant-scoped operations
+**Current Task:** Project status documentation and task planning
 
+**Context:**
+- Comprehensive requirements analysis completed
+- Architecture and technical specifications documented
+- Authentication infrastructure fully implemented
+- Database migration from YAML to InstantDB is the primary objective
 
-## Locked Architectural Decisions
+---
 
-The following decisions are **frozen** for this implementation step:
+## Recent Changes
 
-| Decision | Status |
-|----------|--------|
-| **UUIDs everywhere** | Locked — all primary keys and foreign keys use UUID |
-| **Nile-integrated tables migrated** | Locked — `users`, `tenants`, `tenant_users` exist and are managed by Better-Auth + better-auth-nile |
-| **No AsyncLocalStorage** | Locked — context is passed explicitly, never stored in async context |
-| **No implicit tenant context** | Locked — tenant MUST come from URL params and be validated |
-| **No cross-scope foreign keys** | Locked — tenant-scoped tables cannot FK to other tenants' data |
-| **Roles stored as TEXT[]** | Locked — `tenant_users.roles` column is `TEXT[]` array |
-| **Drizzle-only data access** | Locked — Nile SDK is not used for queries; Drizzle ORM is the sole data-access layer |
+### Completed (This Session)
+1. **Project Status Documentation**
+   - Created comprehensive task breakdown in `tasks_plan.md`
+   - Documented all phases: Foundation, Authentication Flow, Service CRUD, Organization Features, Polish
+   - Identified critical path and dependencies
+   - Listed known issues and priorities
 
+2. **Requirements Analysis**
+   - Analyzed product requirements document
+   - Reviewed architecture and technical specifications
+   - Confirmed organization-scoped service model
+   - Validated authentication setup
 
-## Required Backend Deliverables (Step 3)
+### Previously Completed
+1. **Better Auth Integration**
+   - Configured Better Auth with InstantDB adapter
+   - Set up AuthUIProvider with InstantAuth hooks
+   - Created API route handler
+   - Fixed baseURL configuration issues
 
-### 1. Tenant-Scoped Routing
+2. **Schema Foundation**
+   - Auth entities configured
+   - Organization entities configured
+   - All auth-related links defined
 
-Implement URL-based tenant routing in `apps/server`:
+---
 
-```
-/t/:tenantSlug/rpc/*         → oRPC RPCHandler (tenant-scoped procedures)
-/t/:tenantSlug/api-reference/* → OpenAPIHandler (tenant-scoped docs)
-```
+## Active Decisions & Considerations
 
-Global endpoints (outside tenant scope):
-```
-/api/auth/*      → Better-Auth handler
-/rpc/*           → oRPC RPCHandler (global procedures only)
-/api-reference/* → OpenAPIHandler (global docs)
-```
+### Technical Decisions Made
+1. **Services are organization-scoped** ✅ Confirmed
+2. **Repository field is required** ✅ Per product requirements
+3. **Role-based access control:** viewer/editor/admin/owner ✅ Defined
+4. **Export format:** Normalized (one row per interface) ✅ Confirmed
+5. **Migration approach:** One-time import script (optional) ✅ Decided
 
-### 2. Request-Scoped `createContext`
+### Open Questions
+1. **Invitation acceptance flow:** Email token vs in-app acceptance?
+   - Status: Needs clarification
+   - Impact: Affects invitation management UI design
 
-Upgrade `packages/api/src/context.ts` to return a strict, tenant-aware context:
+2. **Organization creation policy:** Any authenticated user vs admin-only?
+   - Status: Needs business decision
+   - Impact: Affects onboarding flow
 
-```typescript
-interface TenantContext {
-  // Request metadata
-  requestId: string;
-  
-  // Auth (nullable for public routes)
-  session: Session | null;
-  userId: string | null;
-  
-  // Tenant resolution (nullable for global routes)
-  tenantSlug: string | null;
-  tenantId: string | null;       // UUID, resolved from tenantSlug
-  membership: Membership | null;  // includes roles[]
-  
-  // Tenant-scoped data access (only present for tenant-scoped routes)
-  repos: TenantScopedRepos | null;
-}
-```
+3. **Type assertions in providers:** How to properly type InstantDB with Better Auth?
+   - Status: Technical investigation needed
+   - Impact: Type safety
 
-Resolution flow:
-1. Extract `tenantSlug` from route params
-2. Query `tenants` table by slug → get `tenantId`
-3. If authenticated, query `tenant_users` by `(tenantId, userId)` → get `membership`
-4. Construct tenant-scoped repositories with `tenantId` baked in
+---
 
-### 3. Guard Utilities
+## Next Steps
 
-Implement centralized authorization guards in `packages/api`:
+### Immediate (Next Session)
+1. **Begin Phase 1 Implementation**
+   - Task 1.1: Add service entities to schema
+   - Task 1.2: Define service links
+   - Task 1.3: Implement service permissions
 
-```typescript
-// Throws UNAUTHORIZED if no session
-function requireAuth(ctx: TenantContext): asserts ctx is { session: Session; userId: string; ... }
+2. **Verify Environment**
+   - Confirm InstantDB app ID and admin token are configured
+   - Test schema push workflow
+   - Validate permission push workflow
 
-// Throws NOT_FOUND if tenant cannot be resolved from slug
-function requireTenant(ctx: TenantContext): asserts ctx is { tenantId: string; tenantSlug: string; ... }
+### Short-term (This Week)
+3. **Complete Phase 1**
+   - All schema entities added
+   - All links configured
+   - All permissions implemented and tested
 
-// Throws FORBIDDEN if user is not a member of the tenant
-function requireMembership(ctx: TenantContext): asserts ctx is { membership: Membership; ... }
+4. **Begin Phase 2**
+   - Create shared header component
+   - Implement protected route wrapper
+   - Create dashboard layout
 
-// Throws FORBIDDEN if user lacks required role(s)
-function requireRole(ctx: TenantContext, roles: Role[]): void
-```
+---
 
-Guards enforce at procedure boundaries. Business logic never performs inline authorization.
+## Blockers & Risks
 
+### Current Blockers
+- **None** - Ready to begin implementation
 
-## Out of Scope (Step 3)
+### Potential Risks
+1. **Schema Migration Complexity**
+   - Risk: Breaking changes to existing auth schema
+   - Mitigation: Additive changes only, test thoroughly before push
 
-The following are **explicitly not part of this step**:
+2. **Permission Rule Complexity**
+   - Risk: CEL expression errors in permission rules
+   - Mitigation: Test permissions incrementally, validate with InstantDB CLI
 
-- **Frontend changes** — Web app updates are deferred to Step 4 (Client Integration)
-- **AI endpoints** — `/ai` remains unchanged; tenant-scoped AI comes after tenant invariants are proven
-- **Product schema** — `tickets`, `ticket_messages`, `knowledge_base_articles` are Step 5
-- **Observability** — Structured logging is Step 8
+3. **Type Safety Issues**
+   - Risk: Type assertions may hide real type mismatches
+   - Mitigation: Investigate proper typing patterns, create utility types if needed
 
+---
 
-## Verification Requirements
+## Context for Next Developer/AI Session
 
-After making changes, **always verify**:
+**Current State:**
+- Authentication is fully functional
+- Schema has auth and organization entities
+- Service entities need to be added
+- UI still uses YAML-based data source
+- No protected routes implemented yet
 
-```bash
-# Typecheck entire workspace
-pnpm -w typecheck
+**What Works:**
+- User sign-up and sign-in
+- Better Auth UI integration
+- InstantDB connection and queries
+- Basic organization structure
 
-# Lint and format check
-npx ultracite check
-```
+**What Doesn't Work Yet:**
+- Service storage (no schema entities)
+- Service CRUD operations
+- Protected dashboard routes
+- Organization-scoped service queries
+- Service management UI
 
-Both must pass before considering work complete.
+**Key Files to Review:**
+- `instant.schema.ts` - Needs service entities
+- `instant.perms.ts` - Needs service permissions
+- `app/page.tsx` - Still uses YAML
+- `components/service-table/` - Needs database migration
+- `app/providers.tsx` - Has type assertion issues
 
+**Recommended Starting Point:**
+Begin with `instant.schema.ts` - add the three service entities (`services`, `serviceInterfaces`, `serviceDependencies`) with all required fields and proper indexing.
 
-## Files Likely to Change
-
-| File | Purpose |
-|------|---------|
-| `apps/server/src/index.ts` | Add tenant-scoped route groups |
-| `packages/api/src/context.ts` | Upgrade to tenant-aware context factory |
-| `packages/api/src/guards.ts` | New file for authorization guards |
-| `packages/auth/src/helpers.ts` | Tenant/membership resolution via Drizzle |
-| `packages/db/src/index.ts` | May need tenant-scoped repo factory exports |
-
-
-## Reference: Current State
-
-From `tasks_plan.md`, Step 3 maps to:
-- Task 3.1: Implement tenant-scoped routing prefixes
-- Task 3.2: Fix OpenAPI routing consistency
-- Task 3.3: Upgrade `createContext` to strict tenant-aware context
-- Task 3.4: Implement guard middleware
-- Task 3.5: Define stable typed error contract
-
-Dependencies satisfied:
-- Nile-integrated tables exist (migration `0000_legal_aqueduct.sql` applied)
-- `packages/better-auth-nile` provides schema mappings for organizations → tenants
-- `packages/auth` has base Better-Auth configuration

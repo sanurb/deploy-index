@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 interface EmptyStateProps {
   /** Title to display */
@@ -26,13 +26,13 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="flex items-center justify-center">
-      <div className="flex flex-col items-center mt-40">
-        <div className="text-center mb-6 space-y-2">
+      <div className="mt-40 flex flex-col items-center">
+        <div className="mb-6 space-y-2 text-center">
           <h2 className="font-medium text-lg">{title}</h2>
           <p className="text-[#606060] text-sm">{description}</p>
         </div>
 
-        <Button variant="outline" onClick={onAction}>
+        <Button onClick={onAction} variant="outline">
           {actionLabel}
         </Button>
       </div>
@@ -52,10 +52,10 @@ interface NoResultsProps {
 export function NoResults({ onClear }: NoResultsProps) {
   return (
     <EmptyState
-      title="No results"
-      description="Try another search, or adjusting the filters"
       actionLabel="Clear filters"
+      description="Try another search, or adjusting the filters"
       onAction={onClear}
+      title="No results"
     />
   );
 }

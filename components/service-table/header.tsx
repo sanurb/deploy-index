@@ -1,20 +1,19 @@
-"use client"
+"use client";
 
-import { useRef, useEffect, useCallback } from "react"
-import { Search, Download } from "lucide-react"
+import { Download, Search } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 
-import { Input } from "@/components/ui/input"
-import type { GroupedService } from "./types"
+import { Input } from "@/components/ui/input";
 
 /**
  * Props for ServiceTableHeader component
  */
 interface ServiceTableHeaderProps {
-  readonly searchTerm: string
-  readonly onSearchChange: (value: string) => void
-  readonly onExportCsv: () => void
-  readonly servicesCount: number
-  readonly isLoading?: boolean
+  readonly searchTerm: string;
+  readonly onSearchChange: (value: string) => void;
+  readonly onExportCsv: () => void;
+  readonly servicesCount: number;
+  readonly isLoading?: boolean;
 }
 
 /**
@@ -27,65 +26,68 @@ export function ServiceTableHeader({
   servicesCount,
   isLoading = false,
 }: ServiceTableHeaderProps) {
-  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
-      e.preventDefault()
-      searchInputRef.current?.focus()
+      e.preventDefault();
+      searchInputRef.current?.focus();
     }
 
     if (e.key === "Escape") {
-      searchInputRef.current?.blur()
+      searchInputRef.current?.blur();
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [handleKeyDown])
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      onSearchChange(e.target.value)
+      onSearchChange(e.target.value);
     },
-    [onSearchChange],
-  )
+    [onSearchChange]
+  );
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50"
             aria-hidden="true"
+            className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground/50"
           />
           <Input
-            ref={searchInputRef}
-            placeholder="Search... (Press / to focus)"
-            value={searchTerm}
-            onChange={handleSearchChange}
-            className="pl-8 h-9 text-sm dark:border-white/5 border-black/10"
             aria-label="Search services"
+            className="h-9 border-black/10 pl-8 text-sm dark:border-white/5"
             disabled={isLoading}
+            onChange={handleSearchChange}
+            placeholder="Search... (Press / to focus)"
+            ref={searchInputRef}
+            value={searchTerm}
           />
         </div>
         <button
-          type="button"
-          onClick={onExportCsv}
-          disabled={isLoading}
-          className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:border-white/5 border-black/10 border disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Export to CSV"
+          className="h-9 rounded border border-black/10 px-3 text-muted-foreground text-xs transition-colors hover:bg-muted/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/5"
+          disabled={isLoading}
+          onClick={onExportCsv}
+          type="button"
         >
-          <Download className="h-3.5 w-3.5 inline mr-1.5" />
+          <Download className="mr-1.5 inline h-3.5 w-3.5" />
           CSV
         </button>
       </div>
 
-      <div className="text-[11px] text-muted-foreground/60" aria-live="polite" aria-atomic="true">
+      <div
+        aria-atomic="true"
+        aria-live="polite"
+        className="text-[11px] text-muted-foreground/60"
+      >
         {servicesCount} {servicesCount === 1 ? "service" : "services"}
       </div>
     </div>
-  )
+  );
 }
-

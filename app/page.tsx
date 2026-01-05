@@ -1,207 +1,132 @@
-"use client"
+"use client";
 
-import { useState, useEffect, Suspense } from "react"
-import { useAtomValue } from "jotai"
-import Image from "next/image"
-import { ServiceTable } from "@/components/service-table/index"
-import { YamlEditor } from "@/components/yaml-editor"
-import { UrlViewer } from "@/components/url-viewer"
-import { CommandPalette } from "@/components/command-palette"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Table, Link } from "lucide-react"
-import { HydrateDrafts } from "@/lib/hydration/hydrate-drafts"
-import { createInlineSource } from "@/lib/source-identifier"
-import { contentAtom } from "@/lib/state/draft-atoms"
-import ModeToggle from "@/components/animations/mode-toggle"
+import { ArrowRight, Building2, Package, Search, Shield } from "lucide-react";
+import Link from "next/link";
+import { AppHeader } from "@/components/shared/app-header";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
-const defaultYaml = `# Service Inventory
-# Interface-first schema: each domain maps to env, branch, runtime, and service
-
-services:
-  - name: "User API"
-    owner: "Platform Team"
-    repository: "https://github.com/org/user-api"
-    interfaces:
-      - domain: "api.example.com"
-        env: "production"
-        branch: "main"
-        runtime:
-          type: "ec2"
-          id: "i-0abc123def4567890"
-      - domain: "api-staging.example.com"
-        env: "staging"
-        branch: "staging"
-        runtime:
-          type: "k8s"
-          id: "eks-staging/api-service"
-    dependencies: ["PostgreSQL", "Redis"]
-    
-  - name: "Payment Service"
-    owner: "Payments Team"
-    repository: "https://github.com/org/payment-service"
-    interfaces:
-      - domain: "payments.example.com"
-        env: "production"
-        branch: "main"
-        runtime:
-          type: "lambda"
-          id: "payments-api-prod"
-      - domain: "payments-dev.example.com"
-        env: "development"
-        branch: "develop"
-    dependencies: ["Stripe API", "PostgreSQL"]
-    
-  - name: "Analytics Dashboard"
-    owner: "Analytics Team"
-    repository: "https://github.com/org/analytics-dashboard"
-    interfaces:
-      - domain: "analytics.example.com"
-        env: "production"
-        branch: "main"
-        runtime:
-          type: "paas"
-          id: "heroku-analytics-prod"
-      - domain: "analytics-staging.example.com"
-        env: "staging"
-        branch: "staging"
-    dependencies: ["Snowflake", "Redis"]
-    
-  - name: "Email Queue"
-    owner: "Platform Team"
-    repository: "https://github.com/org/email-queue"
-    interfaces:
-      - domain: "queue.internal.example.com"
-        env: "production"
-        branch: "main"
-        runtime:
-          type: "vm"
-          id: "vm-email-queue-01"
-    dependencies: ["RabbitMQ", "SendGrid"]
-`
-
-function PageContent() {
-  const yamlContent = useAtomValue(contentAtom)
-  const [activeTab, setActiveTab] = useState("table")
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
-  const [globalSearchQuery, setGlobalSearchQuery] = useState("")
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault()
-        setCommandPaletteOpen(true)
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [])
-
+export default function HomePage() {
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            {/* Left */}
-            <div className="flex min-w-0 items-center gap-3">
-              {/* Icon (fixed size, responsive-friendly) */}
-              <Image
-                src="/icon.svg"
-                alt="Deploy Index"
-                width={32}
-                height={32}
-                className="h-8 w-8 shrink-0"
-                priority
-              />
+    <div className="flex min-h-screen flex-col bg-background">
+      <AppHeader />
 
-              {/* Wordmark */}
-              <div className="min-w-0">
-                <h1
-                  className={[
-                    "truncate leading-none text-foreground",
-                    "font-sans",
-                    "text-base sm:text-lg md:text-xl",
-                    "tracking-tight",
-                  ].join(" ")}
-                >
-                  <span className="font-extrabold">Deploy</span>
-                  <span className="font-normal">Index</span>
-                </h1>
-              </div>
-
-              {/* Shortcut (hide on small, don’t shrink) */}
-              <kbd className="hidden shrink-0 sm:inline-flex h-6 select-none items-center gap-1 rounded border bg-muted px-2 font-mono text-[11px] font-medium text-muted-foreground">
-                <span className="text-xs">⌘</span>K
-              </kbd>
-            </div>
-
-            {/* Right */}
-            <div className="shrink-0">
-              <ModeToggle />
+      {/* Hero Section */}
+      <main className="flex flex-1 flex-col">
+        <section className="container mx-auto flex flex-col items-center justify-center gap-8 px-4 py-24 text-center">
+          <div className="flex flex-col gap-6">
+            <h1 className="font-extrabold text-4xl tracking-tight sm:text-5xl md:text-6xl">
+              <span className="font-extrabold">Deploy</span>
+              <span className="font-normal"> Index</span>
+            </h1>
+            <p className="mx-auto max-w-2xl text-lg text-muted-foreground sm:text-xl">
+              Centralize, standardize, and govern information about all software
+              deployed within your organization&apos;s infrastructure.
+            </p>
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <Button asChild size="lg">
+                <Link href="/auth/sign-up">
+                  Get Started
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline">
+                <Link href="/auth/sign-in">Sign In</Link>
+              </Button>
             </div>
           </div>
-        </div>
-      </header>
+        </section>
 
-      <CommandPalette
-        open={commandPaletteOpen}
-        onOpenChange={setCommandPaletteOpen}
-        onNavigate={(tab) => setActiveTab(tab)}
-        onSearch={(query) => {
-          setGlobalSearchQuery(query)
-          setActiveTab("table")
-        }}
-      />
+        {/* Features Section */}
+        <section className="border-t bg-muted/50 py-16">
+          <div className="container mx-auto px-4">
+            <div className="mb-12 text-center">
+              <h2 className="font-bold text-3xl tracking-tight">
+                Why Deploy Index?
+              </h2>
+              <p className="mt-4 text-muted-foreground">
+                A single source of truth for all deployed software
+              </p>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardHeader>
+                  <Package className="mb-2 h-8 w-8 text-primary" />
+                  <CardTitle>Software Inventory</CardTitle>
+                  <CardDescription>
+                    Track all deployed applications, services, and system
+                    components in one place.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <Search className="mb-2 h-8 w-8 text-primary" />
+                  <CardTitle>Search & Filter</CardTitle>
+                  <CardDescription>
+                    Quickly find software by name, owner, repository, domain, or
+                    environment.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <Shield className="mb-2 h-8 w-8 text-primary" />
+                  <CardTitle>Access Control</CardTitle>
+                  <CardDescription>
+                    Invitation-based access with role-based permissions for
+                    secure collaboration.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <Building2 className="mb-2 h-8 w-8 text-primary" />
+                  <CardTitle>Organization Scoped</CardTitle>
+                  <CardDescription>
+                    Multi-team ownership with clear accountability and
+                    governance.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </div>
+          </div>
+        </section>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-3 h-9">
-            <TabsTrigger value="table" className="flex items-center gap-1.5 text-xs">
-              <Table className="h-3.5 w-3.5" />
-              <span>Table</span>
-            </TabsTrigger>
-            <TabsTrigger value="editor" className="flex items-center gap-1.5 text-xs">
-              <FileText className="h-3.5 w-3.5" />
-              <span>Editor</span>
-            </TabsTrigger>
-            <TabsTrigger value="viewer" className="flex items-center gap-1.5 text-xs">
-              <Link className="h-3.5 w-3.5" />
-              <span>URL</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="table" className="mt-4">
-            <ServiceTable yamlContent={yamlContent} initialSearchQuery={globalSearchQuery} />
-          </TabsContent>
-
-          <TabsContent value="editor" className="mt-4">
-            <YamlEditor />
-          </TabsContent>
-
-          <TabsContent value="viewer" className="mt-4">
-            <UrlViewer />
-          </TabsContent>
-        </Tabs>
-      </div>
+        {/* CTA Section */}
+        <section className="border-t py-16">
+          <div className="container mx-auto px-4">
+            <Card className="mx-auto max-w-2xl">
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl">
+                  Ready to get started?
+                </CardTitle>
+                <CardDescription>
+                  Join your organization&apos;s software inventory platform.
+                  Request an invitation or sign up to create your account.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex justify-center gap-4">
+                <Button asChild size="lg">
+                  <Link href="/auth/sign-up">
+                    Create Account
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/auth/sign-in">Sign In</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      </main>
     </div>
-  )
-}
-
-export default function Page() {
-  const initialSource = createInlineSource()
-
-  return (
-    <HydrateDrafts initialSource={initialSource} initialContent={defaultYaml}>
-      <Suspense
-        fallback={
-          <div className="min-h-screen bg-background flex items-center justify-center">
-            <div className="text-sm text-muted-foreground">Loading...</div>
-          </div>
-        }
-      >
-        <PageContent />
-      </Suspense>
-    </HydrateDrafts>
-  )
+  );
 }

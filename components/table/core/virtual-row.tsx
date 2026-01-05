@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { TableCell, TableRow } from "@/components/ui/table";
 import type {
   Cell,
   ColumnOrderState,
@@ -13,6 +11,8 @@ import { flexRender } from "@tanstack/react-table";
 import type React from "react";
 import type { CSSProperties } from "react";
 import { memo } from "react";
+import { TableCell, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { TableColumnMeta } from "./types";
 
 interface VirtualRowProps<TData> {
@@ -44,13 +44,13 @@ function VirtualRowInner<TData>({
 
   return (
     <TableRow
-      data-index={row.index}
       className={cn(
         "group cursor-pointer select-text",
         "hover:bg-[#F2F1EF] hover:dark:bg-[#0f0f0f]",
         "flex items-center border-0",
-        "absolute top-0 left-0 w-full min-w-full",
+        "absolute top-0 left-0 w-full min-w-full"
       )}
+      data-index={row.index}
       style={{
         height: rowHeight,
         transform: `translateY(${virtualStart}px)`,
@@ -78,18 +78,18 @@ function VirtualRowInner<TData>({
 
         return (
           <TableCell
-            key={cell.id}
             className={cn(
-              "h-full flex items-center border-b border-border",
+              "flex h-full items-center border-border border-b",
               cellClassName,
-              isActions && "justify-center",
+              isActions && "justify-center"
             )}
-            style={cellStyle}
+            key={cell.id}
             onClick={() => {
               if (!nonClickableColumns.has(columnId)) {
                 onCellClick?.(row.id, columnId);
               }
             }}
+            style={cellStyle}
           >
             <div className="w-full overflow-hidden truncate">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -104,7 +104,7 @@ function VirtualRowInner<TData>({
 // Custom comparison for memo - re-render when row data, position, or column state changes
 function arePropsEqual<TData>(
   prevProps: VirtualRowProps<TData>,
-  nextProps: VirtualRowProps<TData>,
+  nextProps: VirtualRowProps<TData>
 ): boolean {
   return (
     prevProps.row.id === nextProps.row.id &&
@@ -125,5 +125,5 @@ function arePropsEqual<TData>(
 
 // Export memoized component with generics
 export const VirtualRow = memo(VirtualRowInner, arePropsEqual) as <TData>(
-  props: VirtualRowProps<TData>,
+  props: VirtualRowProps<TData>
 ) => React.ReactNode;

@@ -1,11 +1,15 @@
-"use client"
+"use client";
 
-import { useMemo } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
-
-import { EnvBadges, DomainsAffordance, RuntimeFootprint, RowActions } from "./cells"
-import type { GroupedService } from "./types"
-import type { TableColumnMeta } from "@/components/table/core"
+import type { ColumnDef } from "@tanstack/react-table";
+import { useMemo } from "react";
+import type { TableColumnMeta } from "@/components/table/core";
+import {
+  DomainsAffordance,
+  EnvBadges,
+  RowActions,
+  RuntimeFootprint,
+} from "./cells";
+import type { GroupedService } from "./types";
 
 /**
  * Creates column definitions for the service table
@@ -18,8 +22,8 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
         accessorKey: "name",
         header: () => <span>Service</span>,
         cell: ({ row }) => (
-          <div className="flex items-center h-5">
-            <span className="text-[13px] font-medium text-foreground leading-none truncate">
+          <div className="flex h-5 items-center">
+            <span className="truncate font-medium text-[13px] text-foreground leading-none">
               {row.original.name}
             </span>
           </div>
@@ -35,7 +39,9 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
       {
         id: "environments",
         header: () => <span>Env</span>,
-        cell: ({ row }) => <EnvBadges environments={row.original.environments} />,
+        cell: ({ row }) => (
+          <EnvBadges environments={row.original.environments} />
+        ),
         size: 140,
         minSize: 100,
         maxSize: 200,
@@ -48,8 +54,8 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
         header: () => <span>Domains</span>,
         cell: ({ row }) => (
           <DomainsAffordance
-            environments={row.original.environments}
             domainsCount={row.original.domainsCount}
+            environments={row.original.environments}
           />
         ),
         size: 110,
@@ -62,7 +68,9 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
       {
         id: "runtime",
         header: () => <span>Runtime</span>,
-        cell: ({ row }) => <RuntimeFootprint runtimeFootprint={row.original.runtimeFootprint} />,
+        cell: ({ row }) => (
+          <RuntimeFootprint runtimeFootprint={row.original.runtimeFootprint} />
+        ),
         size: 90,
         minSize: 70,
         maxSize: 120,
@@ -75,8 +83,8 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
         accessorKey: "owner",
         header: () => <span>Owner</span>,
         cell: ({ row }) => (
-          <div className="flex items-center h-5">
-            <span className="text-[11px] text-muted-foreground/80 truncate leading-none">
+          <div className="flex h-5 items-center">
+            <span className="truncate text-[11px] text-muted-foreground/80 leading-none">
               {row.original.owner}
             </span>
           </div>
@@ -99,7 +107,6 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
         } as TableColumnMeta,
       },
     ],
-    [],
-  )
+    []
+  );
 }
-

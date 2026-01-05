@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { SkeletonType } from "./types";
 
 interface SkeletonCellProps {
@@ -24,7 +24,7 @@ export function SkeletonCell({ type, width = "w-24" }: SkeletonCellProps) {
     case "avatar-text":
       return (
         <div className="flex items-center space-x-2">
-          <Skeleton className="h-6 w-6 rounded-full shrink-0" />
+          <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
           <Skeleton className={cn("h-3.5", width)} />
         </div>
       );

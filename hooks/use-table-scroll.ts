@@ -47,7 +47,7 @@ export function useTableScroll(options: UseTableScrollOptions = {}) {
 
   const syncColumnIndex = useCallback(() => {
     const container = containerRef.current;
-    if (!container || !useColumnWidths || isScrollingProgrammatically.current)
+    if (!(container && useColumnWidths) || isScrollingProgrammatically.current)
       return;
 
     const allColumnPositions = getColumnPositions();
@@ -90,7 +90,7 @@ export function useTableScroll(options: UseTableScrollOptions = {}) {
 
     currentColumnIndex.current = Math.max(
       startFromColumn,
-      Math.min(detectedColumn, allColumnPositions.length - 1),
+      Math.min(detectedColumn, allColumnPositions.length - 1)
     );
   }, [useColumnWidths, startFromColumn, getColumnPositions]);
 
@@ -202,7 +202,7 @@ export function useTableScroll(options: UseTableScrollOptions = {}) {
         });
       }
     },
-    [scrollAmount, useColumnWidths, startFromColumn, getColumnPositions],
+    [scrollAmount, useColumnWidths, startFromColumn, getColumnPositions]
   );
 
   const scrollRight = useCallback(
@@ -259,7 +259,7 @@ export function useTableScroll(options: UseTableScrollOptions = {}) {
         });
       }
     },
-    [scrollAmount, useColumnWidths, startFromColumn, getColumnPositions],
+    [scrollAmount, useColumnWidths, startFromColumn, getColumnPositions]
   );
 
   useEffect(() => {
@@ -327,7 +327,7 @@ export function useTableScroll(options: UseTableScrollOptions = {}) {
     {
       enabled: isScrollable,
       preventDefault: true,
-    },
+    }
   );
 
   return {

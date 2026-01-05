@@ -20,7 +20,7 @@ export function useTableDnd<TData>(table: Table<TData>) {
       activationConstraint: {
         distance: 8,
       },
-    }),
+    })
   );
 
   const handleDragEnd = useCallback(
@@ -37,7 +37,7 @@ export function useTableDnd<TData>(table: Table<TData>) {
         table.setColumnOrder(newOrder);
       }
     },
-    [table],
+    [table]
   );
 
   return { sensors, handleDragEnd };
