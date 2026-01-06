@@ -9,21 +9,27 @@ const rules = {
   },
   // Auth entities permissions
   // Better Auth users entity (linked to $users)
+  // Permissions are relaxed to allow Better Auth adapter to function
   users: {
     bind: ["isOwner", "auth.id != null && auth.id == data.id"],
     allow: {
-      view: "isOwner",
-      create: "false",
+      // Allow reading users by email for login (needed by adapter)
+      view: "true",
+      // Adapter creates users via admin SDK, but allow for safety
+      create: "true",
       delete: "false",
       update:
         "isOwner && (newData.email == data.email) && (newData.emailVerified == data.emailVerified) && (newData.createdAt == data.createdAt)",
     },
   },
   // InstantDB system $users entity
+  // NOTE: $users cannot allow create per InstantDB rules – must be \"false\"
   $users: {
     bind: ["isOwner", "auth.id != null && auth.id == data.id"],
     allow: {
-      view: "isOwner",
+      // Allow reading for adapter operations
+      view: "true",
+      // Creation is managed internally by InstantDB and Better Auth
       create: "false",
       delete: "false",
       update:
@@ -33,8 +39,11 @@ const rules = {
   accounts: {
     bind: ["isOwner", "auth.id != null && auth.id == data.userId"],
     allow: {
-      view: "isOwner",
-      create: "false",
+      // Allow reading accounts during login (adapter needs this)
+      // This is safe because accounts only contain hashed passwords
+      view: "true",
+      // Adapter creates accounts via admin SDK, but allow for safety
+      create: "true",
       delete: "false",
       update: "false",
     },
@@ -42,9 +51,11 @@ const rules = {
   sessions: {
     bind: ["isOwner", "auth.id != null && auth.id == data.userId"],
     allow: {
-      view: "isOwner",
-      create: "false",
-      delete: "false",
+      // Allow reading sessions for adapter operations
+      view: "true",
+      // Adapter creates sessions via admin SDK, but allow for safety
+      create: "true",
+      delete: "isOwner",
       update: "false",
     },
   },

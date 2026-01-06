@@ -1,4 +1,6 @@
 /** biome-ignore-all lint/correctness/noUnusedVariables: it's okey */
+
+import { instantDBAdapter } from "@daveyplate/better-auth-instantdb";
 import { init } from "@instantdb/admin";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
@@ -9,7 +11,6 @@ import {
   multiSession,
   organization,
 } from "better-auth/plugins";
-import { instantAdapter } from "better-auth-instantdb";
 import schema from "@/instant.schema";
 import { reactInvitationEmail } from "./email/invitation";
 import { resend } from "./email/resend";
@@ -26,10 +27,10 @@ export const adminDb = init({
 });
 
 const authOptions = {
-  database: instantAdapter({
-    db: adminDb,
+  database: instantDBAdapter({
+    db: adminDb as never,
     usePlural: true,
-    debugLogs: false,
+    debugLogs: true,
   }),
   session: {
     cookieCache: {

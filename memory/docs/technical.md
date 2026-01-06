@@ -46,7 +46,7 @@
 ### Libraries (Key)
 
 * InstantDB: `@instantdb/react`, `@instantdb/admin`
-* Auth: `better-auth`, `better-auth-instantdb`, `@daveyplate/better-auth-instantdb`, `@daveyplate/better-auth-ui`
+* Auth: `better-auth`, `@daveyplate/better-auth-instantdb`, `@daveyplate/better-auth-ui`
 * Forms/Validation: `@tanstack/react-form`, `zod`
 * Table: `@tanstack/react-table`, `@tanstack/react-virtual`
 * UI: Shadcn/ui, Radix UI suite, Tailwind CSS, lucide-react, framer-motion
