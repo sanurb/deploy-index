@@ -88,6 +88,7 @@ export default function ModeToggle() {
               rotate: isLight ? 0 : 180,
               scale: isAnimating ? [1, 1.1, 1] : 1,
             }}
+            aria-label={isLight ? "Light mode icon" : "Dark mode icon"}
             className="size-5 will-change-transform sm:size-6"
             fill="none"
             height="100"
@@ -98,6 +99,7 @@ export default function ModeToggle() {
             width="100"
             xmlns="http://www.w3.org/2000/svg"
           >
+            <title>{isLight ? "Light mode" : "Dark mode"}</title>
             <rect height="100" width="100" />
             <m.path
               animate={{

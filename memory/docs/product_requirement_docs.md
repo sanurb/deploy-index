@@ -76,7 +76,8 @@ The business requires a **form-based, authenticated, governed platform** that re
 ### 2.1 In Scope
 
 * Auto-registration (sign-up) for users
-* Invitation-based access to organization data
+* Automatic personal organization creation on registration
+* Organization-based data access and management
 * CRUD management of deployed software
 * CRUD management of deployment interfaces
 * Management of declared dependencies
@@ -137,16 +138,28 @@ The system must allow the organization to:
 #### Auto-Registration
 
 * Any user can create an account via self-registration.
-* Registration **does not grant visibility into organizational data**.
+* Upon registration, a **personal organization is automatically created** for the user.
+* The organization name defaults to the user's registered name (or email if name is not provided).
+* The registering user is automatically assigned the **Owner** role in their personal organization.
+* Users can immediately access and manage software within their personal organization.
 
-#### Invitation-Based Access (Mandatory)
+#### Personal Organizations
 
-* To view or manage deployed software, a user **must be explicitly invited** to the organization.
+* Each user has their own personal organization created automatically on signup.
+* Users are the **Owner** of their personal organization and have full control.
+* Users can invite additional members to their personal organization.
+* Users can create additional organizations if needed.
+* Users can switch between organizations they belong to.
+
+#### Organization-Based Access
+
+* All software records are scoped to an organization.
+* Users can only view and manage software within organizations they belong to.
 * This ensures:
 
-  * Controlled access
-  * Prevention of accidental data exposure
-  * Clear accountability
+  * Data isolation between organizations
+  * Controlled access through organization membership
+  * Clear ownership and accountability
 
 ---
 
@@ -304,9 +317,10 @@ If a software has no interfaces:
 ## 9. Security Requirements
 
 * Authentication required for all access
-* Invitation mandatory for data visibility
+* Organization-based data isolation
 * Role-based access enforced consistently
 * Actions restricted according to permission level
+* Users can only access data within organizations they belong to
 
 ---
 

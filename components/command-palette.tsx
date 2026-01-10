@@ -68,7 +68,7 @@ export function CommandPalette({
 
       const ownerMap = new Map<string, string[]>();
 
-      services.forEach((service: any) => {
+      for (const service of services) {
         // Index service names
         serviceNames.push({
           type: "service",
@@ -82,12 +82,15 @@ export function CommandPalette({
           if (!ownerMap.has(service.owner)) {
             ownerMap.set(service.owner, []);
           }
-          ownerMap.get(service.owner)!.push(service.name || "");
+          const ownerServices = ownerMap.get(service.owner);
+          if (ownerServices) {
+            ownerServices.push(service.name || "");
+          }
         }
 
         // Index domains (interfaces) as first-class citizens
         if (service.interfaces && Array.isArray(service.interfaces)) {
-          service.interfaces.forEach((iface: any) => {
+          for (const iface of service.interfaces) {
             if (iface.domain) {
               domains.push({
                 type: "domain",
@@ -108,18 +111,18 @@ export function CommandPalette({
                 domain: iface.domain || "",
               });
             }
-          });
+          }
         }
-      });
+      }
 
       // Convert owner map to array
-      ownerMap.forEach((services, owner) => {
+      for (const [owner, ownerServices] of ownerMap) {
         owners.push({
           type: "owner",
           value: owner,
-          services,
+          services: ownerServices,
         });
-      });
+      }
 
       return { domains, serviceNames, owners, branches };
     } catch {
@@ -204,9 +207,9 @@ export function CommandPalette({
 
         {results.domains.length > 0 && (
           <CommandGroup heading="Domains">
-            {results.domains.map((domain, i) => (
+            {results.domains.map((domain) => (
               <CommandItem
-                key={`domain-${i}`}
+                key={`domain-${domain.value}-${domain.service}-${domain.env}-${domain.branch}`}
                 onSelect={() => {
                   onSearch(domain.value);
                   onOpenChange(false);
@@ -226,9 +229,9 @@ export function CommandPalette({
 
         {results.services.length > 0 && (
           <CommandGroup heading="Services">
-            {results.services.map((service, i) => (
+            {results.services.map((service) => (
               <CommandItem
-                key={`service-${i}`}
+                key={`service-${service.value}-${service.owner}`}
                 onSelect={() => {
                   onSearch(service.value);
                   onOpenChange(false);
@@ -250,9 +253,9 @@ export function CommandPalette({
 
         {results.branches.length > 0 && (
           <CommandGroup heading="Branches">
-            {results.branches.map((branch, i) => (
+            {results.branches.map((branch) => (
               <CommandItem
-                key={`branch-${i}`}
+                key={`branch-${branch.value}-${branch.service}-${branch.domain}`}
                 onSelect={() => {
                   onSearch(branch.value);
                   onOpenChange(false);
@@ -272,9 +275,9 @@ export function CommandPalette({
 
         {results.owners.length > 0 && (
           <CommandGroup heading="Owners">
-            {results.owners.map((owner, i) => (
+            {results.owners.map((owner) => (
               <CommandItem
-                key={`owner-${i}`}
+                key={`owner-${owner.value}`}
                 onSelect={() => {
                   onSearch(owner.value);
                   onOpenChange(false);

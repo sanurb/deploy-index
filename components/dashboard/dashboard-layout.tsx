@@ -2,6 +2,8 @@
 
 import {
   Building2,
+  ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   Mail,
   Menu,
@@ -11,10 +13,16 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+
 import { AppHeader } from "@/components/shared/app-header";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { isRouteActive } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+
+import { OrganizationSwitcherWrapper } from "./organization-switcher-wrapper";
+import { SidebarItem } from "./sidebar-item";
 
 const NAVIGATION_ITEMS = [
   {
@@ -49,43 +57,82 @@ const NAVIGATION_ITEMS = [
   },
 ];
 
+const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
+
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+    setIsCollapsed(collapsed);
+  }, []);
+
+  const handleToggle = () => {
+    const newCollapsed = !isCollapsed;
+    setIsCollapsed(newCollapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newCollapsed));
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader />
       <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Sidebar */}
-        <aside className="hidden bg-card md:fixed md:inset-y-0 md:top-16 md:flex md:w-64 md:flex-col md:border-r">
-          <div className="flex flex-1 flex-col overflow-y-auto pt-6 pb-4">
-            <nav className="flex-1 space-y-1 px-3">
+        {/* Desktop: Persistent sidebar */}
+        <aside
+          className={cn(
+            "hidden h-[calc(100dvh-3.5rem)] flex-col border-border border-r bg-sidebar transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] md:flex",
+            isCollapsed ? "w-[72px]" : "w-[260px]"
+          )}
+        >
+          <div className="flex flex-1 flex-col overflow-y-auto py-3">
+            <nav className="flex flex-1 flex-col gap-1 px-2">
               {NAVIGATION_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  pathname?.startsWith(item.href + "/");
+                const isActive = isRouteActive(pathname, item.href);
                 return (
-                  <Link
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 font-medium text-sm transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
+                  <SidebarItem
                     href={item.href}
+                    icon={item.icon}
+                    isActive={isActive}
+                    isCollapsed={isCollapsed}
                     key={item.href}
-                  >
-                    <Icon className="h-5 w-5" />
-                    {item.title}
-                  </Link>
+                    label={item.title}
+                  />
                 );
               })}
             </nav>
+
+            <div className="mt-auto border-border border-t p-2">
+              <OrganizationSwitcherWrapper isExpanded={!isCollapsed} />
+            </div>
+
+            {/* Collapse/Expand Toggle */}
+            <div className="border-border border-t p-2">
+              <Button
+                className="w-full justify-start gap-3"
+                onClick={handleToggle}
+                size="sm"
+                variant="ghost"
+              >
+                {isCollapsed ? (
+                  <ChevronRight className="size-4" />
+                ) : (
+                  <>
+                    <ChevronLeft className="size-4" />
+                    <span className="text-muted-foreground text-xs">
+                      Collapse
+                    </span>
+                  </>
+                )}
+                <span className="sr-only">
+                  {isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                </span>
+              </Button>
+            </div>
           </div>
         </aside>
 
@@ -105,11 +152,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <nav className="mt-4 flex flex-col gap-1">
               {NAVIGATION_ITEMS.map((item) => {
                 const Icon = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  pathname?.startsWith(item.href + "/");
+                const isActive = isRouteActive(pathname, item.href);
                 return (
                   <Link
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 font-medium text-sm transition-colors",
                       isActive
@@ -129,7 +175,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </Sheet>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto md:ml-64">
+        <main className="flex-1 overflow-y-auto">
           <div className="container mx-auto px-4 py-6">{children}</div>
         </main>
       </div>

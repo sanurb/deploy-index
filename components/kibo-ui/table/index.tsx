@@ -59,7 +59,9 @@ export const TableContext = createContext<TableContextValue>({
   columns: [],
   table: null,
   selectedIndex: null,
-  setSelectedIndex: () => {},
+  setSelectedIndex: () => {
+    // No-op: default context value
+  },
   onRowAction: undefined,
   gridTemplate: "",
 });
@@ -116,7 +118,9 @@ export function TableProvider<TData, TValue>({
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex((prev) => {
-          if (prev === null) return 0;
+          if (prev === null) {
+            return 0;
+          }
           return Math.min(prev + 1, rowCount - 1);
         });
       }
@@ -124,7 +128,9 @@ export function TableProvider<TData, TValue>({
       if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndex((prev) => {
-          if (prev === null) return 0;
+          if (prev === null) {
+            return 0;
+          }
           return Math.max(prev - 1, 0);
         });
       }

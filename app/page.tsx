@@ -80,7 +80,7 @@ export default function HomePage() {
                   <Shield className="mb-2 h-8 w-8 text-primary" />
                   <CardTitle>Access Control</CardTitle>
                   <CardDescription>
-                    Invitation-based access with role-based permissions for
+                    Organization-scoped access with role-based permissions for
                     secure collaboration.
                   </CardDescription>
                 </CardHeader>
@@ -108,8 +108,8 @@ export default function HomePage() {
                   Ready to get started?
                 </CardTitle>
                 <CardDescription>
-                  Join your organization&apos;s software inventory platform.
-                  Request an invitation or sign up to create your account.
+                  Start managing your software inventory. Sign up to create your
+                  account and personal organization.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex justify-center gap-4">

@@ -65,6 +65,7 @@ export function Providers({ children }: { children: ReactNode }) {
         mutators={mutators}
         navigate={handleNavigate}
         onSessionChange={handleSessionChange}
+        organization={{}}
         replace={handleReplace}
       >
         {children}

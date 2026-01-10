@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/correctness/noUnusedVariables: it's okey */
 
+import { randomUUID } from "node:crypto";
 import { instantDBAdapter } from "@daveyplate/better-auth-instantdb";
 import { init } from "@instantdb/admin";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -36,6 +37,89 @@ const authOptions = {
     cookieCache: {
       enabled: true,
       maxAge: 5 * 60, // Cache duration in seconds
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          // Auto-create personal organization on user signup
+          const orgName =
+            user.name || user.email.split("@")[0] || "My Organization";
+          const orgSlug = orgName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+
+          try {
+            const orgId = randomUUID();
+            const memberId = randomUUID();
+
+            await adminDb.transact([
+              adminDb.tx.organizations[orgId].create({
+                name: orgName,
+                slug: `${orgSlug}-${Date.now()}`, // Ensure uniqueness
+                createdAt: new Date(),
+              }),
+              adminDb.tx.members[memberId]
+                .create({
+                  userId: user.id,
+                  role: "owner",
+                  organizationId: orgId,
+                  createdAt: new Date(),
+                })
+                .link({
+                  organization: orgId,
+                  user: user.id,
+                }),
+            ]);
+          } catch (error) {
+            console.error("Failed to create personal organization:", error);
+            // Don't throw - allow user creation to succeed even if org creation fails
+            // The user can create an organization manually later
+          }
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (session) => {
+          // Set active organization if user has one and none is set
+          if (!session.activeOrganizationId) {
+            try {
+              const { members } = await adminDb.query({
+                members: {
+                  $: {
+                    where: { userId: session.userId },
+                    limit: 1,
+                  },
+                  organization: {},
+                },
+              });
+
+              if (
+                members &&
+                members.length > 0 &&
+                members[0]?.organization?.id
+              ) {
+                return {
+                  data: {
+                    ...session,
+                    activeOrganizationId: members[0].organization.id,
+                  },
+                };
+              }
+            } catch (error) {
+              console.error(
+                "Failed to set active organization on session:",
+                error
+              );
+            }
+          }
+
+          return { data: session };
+        },
+      },
     },
   },
   emailVerification: {

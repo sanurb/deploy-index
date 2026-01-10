@@ -14,7 +14,9 @@ export function Portal({ children }: PortalProps) {
     setMounted(true);
   }, []);
 
-  if (!mounted) return null;
+  if (!mounted) {
+    return null;
+  }
 
   return createPortal(children, document.body);
 }
