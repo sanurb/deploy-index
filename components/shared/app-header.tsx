@@ -16,8 +16,12 @@ export function AppHeader() {
           src="/icon.svg"
           width={32}
         />
-        <span className="font-extrabold text-lg">Deploy</span>
-        <span className="font-normal text-lg">Index</span>
+        <div className="min-w-0">
+          <h2 className="truncate font-sans text-base text-foreground leading-none tracking-tight sm:text-lg md:text-xl">
+            <span className="font-normal text-lg">Deploy</span>
+            <span className="font-extrabold text-lg">Index</span>
+          </h2>
+        </div>
       </Link>
 
       <div className="flex items-center gap-2">
