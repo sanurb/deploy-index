@@ -208,10 +208,12 @@ export function ServiceTable({
         >
           <div
             className="overflow-auto overscroll-x-none"
+            data-slot="table-container"
             ref={(el) => {
               parentRef.current = el;
               tableScroll.containerRef.current = el;
             }}
+            tabIndex={-1}
           >
             <Table>
               <TableHeader className="sticky top-0 z-20 border-black/10 border-b bg-background dark:border-white/5">

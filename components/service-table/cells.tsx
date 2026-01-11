@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Pill, PillIndicator } from "@/components/kibo-ui/pill";
 import {
   AlertDialog,
@@ -329,12 +329,22 @@ export const RowActions = memo(function RowActions({
   onDelete,
 }: RowActionsProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const handleEdit = useCallback(() => {
-    onEdit(service);
+    // Close dropdown first, then open drawer
+    setIsDropdownOpen(false);
+    // Use setTimeout to ensure dropdown closes before drawer opens
+    // This prevents focus issues and ensures proper focus restoration
+    setTimeout(() => {
+      onEdit(service);
+      // The page component will handle focus restoration when drawer closes
+    }, 0);
   }, [onEdit, service]);
 
   const handleDeleteClick = useCallback(() => {
+    setIsDropdownOpen(false);
     setIsDeleteDialogOpen(true);
   }, []);
 
@@ -345,12 +355,13 @@ export const RowActions = memo(function RowActions({
 
   return (
     <div className="flex h-5 items-center justify-end">
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={setIsDropdownOpen} open={isDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <button
             aria-label="Service actions"
             className="flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={(e) => e.stopPropagation()}
+            ref={triggerRef}
             type="button"
           >
             <span className="text-lg text-muted-foreground leading-none">

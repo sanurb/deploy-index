@@ -318,7 +318,7 @@ export function CreateServiceDrawer({
   }
 
   return (
-    <Sheet onOpenChange={onOpenChange} open={open}>
+    <Sheet modal onOpenChange={onOpenChange} open={open}>
       <SheetContent className="flex flex-col sm:max-w-lg" side="right">
         <SheetHeader>
           <SheetTitle>

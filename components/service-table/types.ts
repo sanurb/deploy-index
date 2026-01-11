@@ -55,6 +55,7 @@ export interface ServiceInterface {
 export interface ServiceDependency {
   readonly id: string;
   readonly name: string;
+}
 
 /**
  * Form data for creating/editing a service

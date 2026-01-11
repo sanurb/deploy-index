@@ -36,6 +36,30 @@ const PAGE_TITLE = "Services";
 const PAGE_DESCRIPTION =
   "Manage and track your deployed services across environments.";
 
+/**
+ * Restores focus to an element if it's still in the DOM and focusable
+ */
+function restoreFocus(element: HTMLElement | null): void {
+  if (!element) {
+    return;
+  }
+
+  // Check if element is still in the DOM and focusable
+  if (document.contains(element) && typeof element.focus === "function") {
+    try {
+      element.focus();
+    } catch {
+      // If focus fails, try to focus the table container instead
+      const tableContainer = document.querySelector(
+        '[data-slot="table-container"]'
+      ) as HTMLElement;
+      if (tableContainer) {
+        tableContainer.focus();
+      }
+    }
+  }
+}
+
 export default function ServicesPage() {
   const { user } = db.useAuth();
   const userId = user?.id && typeof user.id === "string" ? user.id : null;
@@ -46,6 +70,7 @@ export default function ServicesPage() {
   );
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Query user's organizations and memberships to check roles
   const { data: orgData } = db.useQuery(
@@ -181,6 +206,9 @@ export default function ServicesPage() {
   const handleEditService = useCallback(
     (service: GroupedService) => {
       if (canCreate) {
+        // Store the currently focused element before opening drawer
+        previousFocusRef.current =
+          (document.activeElement as HTMLElement) || null;
         setEditingService(service);
         setIsDrawerOpen(true);
       }
@@ -396,12 +424,18 @@ export default function ServicesPage() {
             canCreate={canCreate}
             editingService={editingService}
             existingServiceNames={existingServiceNames}
-            onOpenChange={(open: boolean) => {
+            onOpenChange={useCallback((open: boolean) => {
               setIsDrawerOpen(open);
               if (!open) {
                 setEditingService(null);
+                // Restore focus to the previously focused element
+                // Use setTimeout to ensure Sheet has fully closed and DOM has updated
+                setTimeout(() => {
+                  restoreFocus(previousFocusRef.current);
+                  previousFocusRef.current = null;
+                }, 100);
               }
-            }}
+            }, [])}
             onSubmit={handleServiceSubmit}
             open={isDrawerOpen}
           />
