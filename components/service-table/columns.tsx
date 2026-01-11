@@ -109,7 +109,7 @@ export function useServiceTableColumns({
       },
       {
         id: "actions",
-        header: () => <span className="sr-only">Actions</span>,
+        header: () => <span>Actions</span>,
         cell: ({ row }) => (
           <RowActions
             onDelete={onDelete}

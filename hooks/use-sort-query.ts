@@ -13,19 +13,21 @@ export function useSortQuery() {
 
   /**
    * Toggle sort for a column
-   * Cycles through: asc -> desc -> clear
+   * If clicking the same column: cycles through asc -> desc -> clear
+   * If clicking a different column: sets new column to asc
    */
   const createSortQuery = useCallback(
     (name: string) => {
-      if (sortValue === "asc") {
+      const isSameColumn = sortColumn === name;
+      if (isSameColumn && sortValue === "asc") {
         setParams({ sort: [name, "desc"] });
-      } else if (sortValue === "desc") {
+      } else if (isSameColumn && sortValue === "desc") {
         setParams({ sort: null });
       } else {
         setParams({ sort: [name, "asc"] });
       }
     },
-    [sortValue, setParams]
+    [sortColumn, sortValue, setParams]
   );
 
   return {

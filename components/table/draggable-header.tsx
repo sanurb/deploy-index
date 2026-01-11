@@ -13,6 +13,8 @@ interface DraggableHeaderProps {
   className?: string;
   style?: CSSProperties;
   disabled?: boolean;
+  "aria-sort"?: "ascending" | "descending" | "none";
+  scope?: "col" | "row";
 }
 
 export function DraggableHeader({
@@ -21,6 +23,8 @@ export function DraggableHeader({
   className,
   style,
   disabled = false,
+  "aria-sort": ariaSort,
+  scope,
 }: DraggableHeaderProps) {
   const {
     attributes,
@@ -43,6 +47,7 @@ export function DraggableHeader({
 
   return (
     <TableHead
+      aria-sort={ariaSort}
       className={cn(
         "group/header relative flex h-full select-none items-center border-border border-t px-4",
         "shadow-none outline-none ring-0 hover:shadow-none focus:shadow-none focus:outline-none focus:ring-0",
@@ -50,6 +55,7 @@ export function DraggableHeader({
         className
       )}
       ref={setNodeRef}
+      scope={scope ?? "col"}
       style={dragStyle}
     >
       <div className="min-w-0 flex-1 overflow-hidden">{children}</div>
