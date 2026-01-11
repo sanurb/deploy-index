@@ -1,6 +1,6 @@
 "use client";
 
-import { UserButton } from "@daveyplate/better-auth-ui";
+import { SignedIn, SignedOut, UserButton } from "@daveyplate/better-auth-ui";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -16,12 +16,18 @@ export function AppHeader() {
           src="/icon.svg"
           width={32}
         />
-        <span className="font-extrabold">Deploy</span>
-        <span className="font-normal">Index</span>
+        <span className="font-extrabold text-lg">Deploy</span>
+        <span className="font-normal text-lg">Index</span>
       </Link>
 
       <div className="flex items-center gap-2">
-        <UserButton size="icon" />
+        <SignedIn>
+          <UserButton size="icon" />
+        </SignedIn>
+
+        <SignedOut>
+          <Link href="/auth/sign-in">Sign In</Link>
+        </SignedOut>
       </div>
     </header>
   );
