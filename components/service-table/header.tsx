@@ -51,6 +51,9 @@ export function ServiceTableHeader({
     [onSearchChange]
   );
 
+  // Hide export when no services
+  const showExport = servicesCount > 0;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -64,30 +67,34 @@ export function ServiceTableHeader({
             className="h-9 border-black/10 pl-8 text-sm dark:border-white/5"
             disabled={isLoading}
             onChange={handleSearchChange}
-            placeholder="Search... (Press / to focus)"
+            placeholder="Search services..."
             ref={searchInputRef}
             value={searchTerm}
           />
         </div>
-        <button
-          aria-label="Export to CSV"
-          className="h-9 rounded border border-black/10 px-3 text-muted-foreground text-xs transition-colors hover:bg-muted/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/5"
-          disabled={isLoading}
-          onClick={onExportCsv}
-          type="button"
-        >
-          <Download className="mr-1.5 inline h-3.5 w-3.5" />
-          CSV
-        </button>
+        {showExport && (
+          <button
+            aria-label="Export to CSV"
+            className="h-9 rounded border border-black/10 px-3 text-muted-foreground text-xs transition-colors hover:bg-muted/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/5"
+            disabled={isLoading}
+            onClick={onExportCsv}
+            type="button"
+          >
+            <Download className="mr-1.5 inline h-3.5 w-3.5" />
+            CSV
+          </button>
+        )}
       </div>
 
-      <div
-        aria-atomic="true"
-        aria-live="polite"
-        className="text-[11px] text-muted-foreground/60"
-      >
-        {servicesCount} {servicesCount === 1 ? "service" : "services"}
-      </div>
+      {servicesCount > 0 && (
+        <div
+          aria-atomic="true"
+          aria-live="polite"
+          className="text-[11px] text-muted-foreground/60"
+        >
+          {servicesCount} {servicesCount === 1 ? "service" : "services"}
+        </div>
+      )}
     </div>
   );
 }

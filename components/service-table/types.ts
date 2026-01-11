@@ -28,6 +28,9 @@ export interface GroupedService {
  * Props for the main ServiceTable component
  */
 export interface ServiceTableProps {
-  readonly yamlContent: string;
+  readonly yamlContent?: string;
+  readonly services?: readonly GroupedService[];
   readonly initialSearchQuery?: string;
+  readonly onSearchChange?: (query: string) => void;
+  readonly showHeader?: boolean;
 }

@@ -12,7 +12,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   NoResults,
   type TableColumnMeta,
@@ -41,8 +41,9 @@ import { useServiceTableColumns } from "./columns";
 import { NON_CLICKABLE_COLUMNS, TABLE_ID } from "./constants";
 import { exportServicesToCsv } from "./export";
 import { ServiceTableHeader } from "./header";
-import type { ServiceTableProps } from "./types";
+import type { GroupedService, ServiceTableProps } from "./types";
 import { useServiceData } from "./use-service-data";
+import { calculateSearchScore } from "./utils";
 
 const ROW_HEIGHT = ROW_HEIGHTS[TABLE_ID];
 
@@ -50,14 +51,39 @@ const ROW_HEIGHT = ROW_HEIGHTS[TABLE_ID];
  * Main service table component - orchestrates hooks, queries and render
  */
 export function ServiceTable({
-  yamlContent,
+  yamlContent = "",
+  services: providedServices,
   initialSearchQuery = "",
+  onSearchChange,
+  showHeader = true,
 }: ServiceTableProps) {
   const [searchTerm, setSearchTerm] = useState(initialSearchQuery);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const { filteredServices } = useServiceData(yamlContent, searchTerm);
+  // Use provided services if available, otherwise parse from YAML
+  const yamlData = useServiceData(yamlContent, searchTerm);
+
+  const filteredServices = useMemo((): GroupedService[] => {
+    if (providedServices) {
+      // Filter provided services by search term
+      if (!searchTerm.trim()) {
+        return [...providedServices];
+      }
+
+      return providedServices
+        .map((service) => ({
+          service,
+          score: calculateSearchScore(service, searchTerm),
+        }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ service }) => service);
+    }
+
+    // Fallback to YAML parsing
+    return [...yamlData.filteredServices];
+  }, [providedServices, searchTerm, yamlData.filteredServices]);
   const columns = useServiceTableColumns();
 
   const {
@@ -137,9 +163,13 @@ export function ServiceTable({
     exportServicesToCsv(filteredServices);
   }, [filteredServices]);
 
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchTerm(value);
-  }, []);
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchTerm(value);
+      onSearchChange?.(value);
+    },
+    [onSearchChange]
+  );
 
   const visibleColumns = table
     .getAllLeafColumns()
@@ -150,15 +180,17 @@ export function ServiceTable({
 
   return (
     <div className="space-y-3">
-      <ServiceTableHeader
-        onExportCsv={handleExportCsv}
-        onSearchChange={handleSearchChange}
-        searchTerm={searchTerm}
-        servicesCount={filteredServices.length}
-      />
+      {showHeader && (
+        <ServiceTableHeader
+          onExportCsv={handleExportCsv}
+          onSearchChange={handleSearchChange}
+          searchTerm={searchTerm}
+          servicesCount={filteredServices.length}
+        />
+      )}
 
       {filteredServices.length === 0 ? (
-        <NoResults onClear={() => setSearchTerm("")} />
+        <NoResults onClear={() => handleSearchChange("")} />
       ) : (
         <DndContext
           collisionDetection={closestCenter}

@@ -1,14 +1,7 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import {
-  ExternalLink,
-  FileText,
-  GitBranch,
-  Globe,
-  Package,
-  User,
-} from "lucide-react";
+import { GitBranch, Globe, Package, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CommandDialog,
@@ -294,29 +287,6 @@ export function CommandPalette({
             ))}
           </CommandGroup>
         )}
-
-        <CommandGroup heading="Actions">
-          <CommandItem
-            key="action-editor"
-            onSelect={() => {
-              onNavigate("editor");
-              onOpenChange(false);
-            }}
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            <span>Edit YAML</span>
-          </CommandItem>
-          <CommandItem
-            key="action-viewer"
-            onSelect={() => {
-              onNavigate("viewer");
-              onOpenChange(false);
-            }}
-          >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            <span>Import from URL</span>
-          </CommandItem>
-        </CommandGroup>
       </CommandList>
     </CommandDialog>
   );
