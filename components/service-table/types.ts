@@ -36,3 +36,33 @@ export interface ServiceTableProps {
   readonly onEdit?: (service: GroupedService) => void;
   readonly onDelete?: (service: GroupedService) => void;
 }
+
+/**
+ * Service interface for form data
+ */
+export interface ServiceInterface {
+  readonly id: string;
+  readonly domain: string;
+  readonly env: string;
+  readonly branch: string;
+  readonly runtimeType: string;
+  readonly runtimeId: string;
+}
+
+/**
+ * Service dependency for form data
+ */
+export interface ServiceDependency {
+  readonly id: string;
+  readonly name: string;
+
+/**
+ * Form data for creating/editing a service
+ */
+export interface CreateServiceFormData {
+  readonly name: string;
+  readonly owner: string;
+  readonly repository: string;
+  readonly interfaces: readonly ServiceInterface[];
+  readonly dependencies: readonly ServiceDependency[];
+}

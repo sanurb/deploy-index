@@ -155,11 +155,16 @@ export function ServiceTable({
   const handleCellClick = useCallback(
     (rowId: string, columnId: string) => {
       const row = filteredServices.find((s) => s.id === rowId);
-      if (row && columnId === "name" && row.repository) {
-        window.open(row.repository, "_blank", "noopener,noreferrer");
+      if (!row) {
+        return;
+      }
+
+      // Open edit drawer for any column click (except actions)
+      if (columnId !== "actions" && onEdit) {
+        onEdit(row);
       }
     },
-    [filteredServices]
+    [filteredServices, onEdit]
   );
 
   const handleExportCsv = useCallback(() => {

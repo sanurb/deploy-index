@@ -138,3 +138,67 @@ export function calculateSearchScore(
 
   return score;
 }
+
+/**
+ * Converts InstantDB services data to GroupedService format for ServiceTable
+ */
+export function convertServicesToGrouped(
+  services: Array<{
+    readonly id: string;
+    readonly name: string;
+    readonly owner: string;
+    readonly repository: string;
+    readonly interfaces?: Array<{
+      readonly domain: string;
+      readonly env: string | null;
+      readonly branch: string | null;
+      readonly runtimeType: string | null;
+      readonly runtimeId: string | null;
+    }>;
+    readonly dependencies?: Array<{
+      readonly dependencyName: string;
+    }>;
+  }>
+): readonly GroupedService[] {
+  return services.map((service, serviceIndex) => {
+    const environments: Array<{
+      readonly env: "production" | "staging" | "development";
+      readonly domain: string;
+      readonly branch: string | null;
+      readonly runtimeType: string | null;
+      readonly runtimeId: string | null;
+    }> = [];
+
+    if (service.interfaces && service.interfaces.length > 0) {
+      for (const iface of service.interfaces) {
+        if (iface.domain && iface.domain.trim().length > 0) {
+          const normalizedEnv = normalizeEnv(iface.env);
+          const env: "production" | "staging" | "development" =
+            normalizedEnv ?? "development";
+
+          environments.push({
+            env,
+            domain: iface.domain.trim(),
+            branch: iface.branch?.trim() ?? null,
+            runtimeType: iface.runtimeType?.trim() ?? null,
+            runtimeId: iface.runtimeId?.trim() ?? null,
+          });
+        }
+      }
+    }
+
+    const sortedEnvs = sortEnvironments(environments);
+
+    return {
+      id: service.id,
+      serviceIndex,
+      name: service.name,
+      owner: service.owner,
+      repository: service.repository,
+      dependencies: service.dependencies?.map((d) => d.dependencyName) ?? [],
+      environments: sortedEnvs,
+      domainsCount: sortedEnvs.length,
+      runtimeFootprint: computeRuntimeFootprint(sortedEnvs),
+    };
+  });
+}
