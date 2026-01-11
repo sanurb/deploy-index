@@ -17,14 +17,12 @@ import { parseYaml } from "@/lib/yaml-utils";
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onNavigate: (tab: string) => void;
   onSearch: (query: string) => void;
 }
 
 export function CommandPalette({
   open,
   onOpenChange,
-  onNavigate,
   onSearch,
 }: CommandPaletteProps) {
   const yamlContent = useAtomValue(contentAtom);

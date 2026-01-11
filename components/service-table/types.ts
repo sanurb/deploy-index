@@ -33,4 +33,6 @@ export interface ServiceTableProps {
   readonly initialSearchQuery?: string;
   readonly onSearchChange?: (query: string) => void;
   readonly showHeader?: boolean;
+  readonly onEdit?: (service: GroupedService) => void;
+  readonly onDelete?: (service: GroupedService) => void;
 }

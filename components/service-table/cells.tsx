@@ -1,19 +1,29 @@
 "use client";
 
-import { Copy, ExternalLink, Terminal } from "lucide-react";
+import { Copy } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { Pill, PillIndicator } from "@/components/kibo-ui/pill";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ENV_LABELS, ENV_ORDER, RUNTIME_LABELS } from "./constants";
 import type { EnvironmentInfo, GroupedService } from "./types";
 
@@ -142,7 +152,9 @@ export const EnvBadges = memo(function EnvBadges({
                     aria-label={`Copy ${env.domain}`}
                     className="shrink-0 rounded p-1.5 opacity-0 transition-colors hover:bg-muted focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/item:opacity-100"
                     onClick={() => {
-                      void navigator.clipboard.writeText(env.domain);
+                      navigator.clipboard.writeText(env.domain).catch(() => {
+                        // Ignore clipboard errors
+                      });
                       setIsOpen(false);
                     }}
                     title="Copy domain"
@@ -178,7 +190,9 @@ export const DomainsAffordance = memo(function DomainsAffordance({
   const [isOpen, setIsOpen] = useState(false);
 
   const handleCopyDomain = useCallback((domain: string) => {
-    void navigator.clipboard.writeText(domain);
+    navigator.clipboard.writeText(domain).catch(() => {
+      // Ignore clipboard errors
+    });
     setIsOpen(false);
   }, []);
 
@@ -224,8 +238,8 @@ export const DomainsAffordance = memo(function DomainsAffordance({
                       <div className="inline-flex shrink-0 items-center gap-1.5">
                         {env.env === "production" && (
                           <div
-                            aria-label="Production"
                             className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500"
+                            title="Production"
                           />
                         )}
                         <span className="min-w-12 font-mono text-[10px] text-muted-foreground/70 uppercase tracking-wide">
@@ -244,10 +258,9 @@ export const DomainsAffordance = memo(function DomainsAffordance({
                       </div>
                     </div>
                     <button
-                      aria-label={`Copy ${env.domain}`}
                       className="shrink-0 rounded p-1.5 opacity-0 transition-colors hover:bg-muted focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/item:opacity-100"
                       onClick={() => handleCopyDomain(env.domain)}
-                      title="Copy domain"
+                      title={`Copy ${env.domain}`}
                       type="button"
                     >
                       <Copy className="h-3.5 w-3.5 text-muted-foreground" />
@@ -303,125 +316,85 @@ export const RuntimeFootprint = memo(function RuntimeFootprint({
  */
 interface RowActionsProps {
   readonly service: GroupedService;
+  readonly onEdit: (service: GroupedService) => void;
+  readonly onDelete: (service: GroupedService) => void;
 }
 
 /**
- * Row actions - always present, opacity changes on hover
+ * Row actions - three-dot menu with Edit and Delete options
  */
 export const RowActions = memo(function RowActions({
   service,
+  onEdit,
+  onDelete,
 }: RowActionsProps) {
-  const handleCopyPrimaryDomain = useCallback(() => {
-    const primaryEnv =
-      service.environments.find((e) => e.env === "production") ??
-      service.environments[0];
-    if (primaryEnv) {
-      void navigator.clipboard.writeText(primaryEnv.domain);
-    }
-  }, [service.environments]);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const handleOpenRepository = useCallback(() => {
-    if (service.repository) {
-      window.open(service.repository, "_blank", "noopener,noreferrer");
-    }
-  }, [service.repository]);
+  const handleEdit = useCallback(() => {
+    onEdit(service);
+  }, [onEdit, service]);
 
-  const handleRuntimeAction = useCallback(() => {
-    const runtimeEnv = service.environments.find(
-      (e) => e.runtimeType && e.runtimeId
-    );
-    if (!runtimeEnv?.runtimeId) {
-      return;
-    }
+  const handleDeleteClick = useCallback(() => {
+    setIsDeleteDialogOpen(true);
+  }, []);
 
-    if (
-      runtimeEnv.runtimeType === "ec2" &&
-      runtimeEnv.runtimeId.startsWith("i-")
-    ) {
-      const url = `https://console.aws.amazon.com/systems-manager/session-manager/${runtimeEnv.runtimeId}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    } else if (
-      runtimeEnv.runtimeType === "k8s" &&
-      runtimeEnv.runtimeId.includes("/")
-    ) {
-      const [cluster, namespace] = runtimeEnv.runtimeId.split("/");
-      const hint = `kubectl --context ${cluster} -n ${namespace} get pods`;
-      void navigator.clipboard.writeText(hint);
-    }
-  }, [service.environments]);
-
-  const hasRuntimeAction = service.environments.some(
-    (e) =>
-      e.runtimeType &&
-      e.runtimeId &&
-      ((e.runtimeType === "ec2" && e.runtimeId.startsWith("i-")) ||
-        (e.runtimeType === "k8s" && e.runtimeId.includes("/")))
-  );
+  const handleDeleteConfirm = useCallback(() => {
+    setIsDeleteDialogOpen(false);
+    onDelete(service);
+  }, [onDelete, service]);
 
   return (
-    <TooltipProvider delayDuration={150}>
-      <div className="flex h-5 items-center justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-        {service.repository && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label="View repository"
-                className="rounded p-1 transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenRepository();
-                }}
-                type="button"
-              >
-                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="text-xs" side="top">
-              View
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {service.domainsCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label="Copy primary domain"
-                className="rounded p-1 transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyPrimaryDomain();
-                }}
-                type="button"
-              >
-                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="text-xs" side="top">
-              Copy
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {hasRuntimeAction && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                aria-label="Open runtime"
-                className="rounded p-1 transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRuntimeAction();
-                }}
-                type="button"
-              >
-                <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="text-xs" side="top">
-              Runtime
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </TooltipProvider>
+    <div className="flex h-5 items-center justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label="Service actions"
+            className="flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={(e) => e.stopPropagation()}
+            type="button"
+          >
+            <span className="text-lg text-muted-foreground leading-none">
+              ⋯
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <DropdownMenuItem onClick={handleEdit}>Edit service</DropdownMenuItem>
+          <DropdownMenuItem onClick={handleDeleteClick} variant="destructive">
+            Delete service
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog
+        onOpenChange={setIsDeleteDialogOpen}
+        open={isDeleteDialogOpen}
+      >
+        <AlertDialogContent
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete service</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{service.name}"? This action
+              cannot be undone and will remove all associated interfaces and
+              dependencies.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteConfirm}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 });

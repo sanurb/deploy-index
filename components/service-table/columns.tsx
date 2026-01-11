@@ -12,9 +12,20 @@ import {
 import type { GroupedService } from "./types";
 
 /**
+ * Props for useServiceTableColumns hook
+ */
+interface UseServiceTableColumnsProps {
+  readonly onEdit: (service: GroupedService) => void;
+  readonly onDelete: (service: GroupedService) => void;
+}
+
+/**
  * Creates column definitions for the service table
  */
-export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
+export function useServiceTableColumns({
+  onEdit,
+  onDelete,
+}: UseServiceTableColumnsProps): ColumnDef<GroupedService>[] {
   return useMemo<ColumnDef<GroupedService>[]>(
     () => [
       {
@@ -98,15 +109,21 @@ export function useServiceTableColumns(): ColumnDef<GroupedService>[] {
       },
       {
         id: "actions",
-        header: () => null,
-        cell: ({ row }) => <RowActions service={row.original} />,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => (
+          <RowActions
+            onDelete={onDelete}
+            onEdit={onEdit}
+            service={row.original}
+          />
+        ),
         size: 72,
         enableResizing: false,
         meta: {
-          headerLabel: "",
+          headerLabel: "Actions",
         } as TableColumnMeta,
       },
     ],
-    []
+    [onEdit, onDelete]
   );
 }

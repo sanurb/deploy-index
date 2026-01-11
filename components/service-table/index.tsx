@@ -43,7 +43,6 @@ import { exportServicesToCsv } from "./export";
 import { ServiceTableHeader } from "./header";
 import type { GroupedService, ServiceTableProps } from "./types";
 import { useServiceData } from "./use-service-data";
-import { calculateSearchScore } from "./utils";
 
 const ROW_HEIGHT = ROW_HEIGHTS[TABLE_ID];
 
@@ -56,6 +55,8 @@ export function ServiceTable({
   initialSearchQuery = "",
   onSearchChange,
   showHeader = true,
+  onEdit,
+  onDelete,
 }: ServiceTableProps) {
   const [searchTerm, setSearchTerm] = useState(initialSearchQuery);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -66,25 +67,27 @@ export function ServiceTable({
 
   const filteredServices = useMemo((): GroupedService[] => {
     if (providedServices) {
-      // Filter provided services by search term
-      if (!searchTerm.trim()) {
-        return [...providedServices];
-      }
-
-      return providedServices
-        .map((service) => ({
-          service,
-          score: calculateSearchScore(service, searchTerm),
-        }))
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(({ service }) => service);
+      // When services are provided, they're already filtered at the page level
+      // Just return them as-is
+      return [...providedServices];
     }
 
-    // Fallback to YAML parsing
+    // Fallback to YAML parsing with internal search
     return [...yamlData.filteredServices];
-  }, [providedServices, searchTerm, yamlData.filteredServices]);
-  const columns = useServiceTableColumns();
+  }, [providedServices, yamlData.filteredServices]);
+
+  const columns = useServiceTableColumns({
+    onEdit:
+      onEdit ??
+      (() => {
+        // No-op: default callback when onEdit is not provided
+      }),
+    onDelete:
+      onDelete ??
+      (() => {
+        // No-op: default callback when onDelete is not provided
+      }),
+  });
 
   const {
     columnVisibility,
