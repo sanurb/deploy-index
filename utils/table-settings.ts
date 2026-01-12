@@ -7,7 +7,12 @@ import type {
 /**
  * Table identifiers for all supported tables
  */
-export type TableId = "transactions" | "customers" | "invoices" | "vault" | "services";
+export type TableId =
+  | "transactions"
+  | "customers"
+  | "invoices"
+  | "vault"
+  | "services";
 
 /**
  * Settings for a single table
@@ -60,7 +65,7 @@ export function getDefaultColumnVisibility(tableId: TableId): VisibilityState {
       acc[col] = false;
       return acc;
     },
-    {} as Record<string, boolean>,
+    {} as Record<string, boolean>
   );
 }
 
@@ -80,7 +85,7 @@ export function getDefaultTableSettings(tableId: TableId): TableSettings {
  */
 export function mergeWithDefaults(
   saved: Partial<TableSettings> | undefined,
-  tableId: TableId,
+  tableId: TableId
 ): TableSettings {
   const defaults = getDefaultTableSettings(tableId);
   return {

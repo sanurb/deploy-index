@@ -1,11 +1,11 @@
-import type { languages } from "monaco-editor"
+import type { languages } from "monaco-editor";
 
 interface CompletionItem {
-  readonly label: string
-  readonly kind: languages.CompletionItemKind
-  readonly insertText: string
-  readonly documentation: string
-  readonly detail?: string
+  readonly label: string;
+  readonly kind: languages.CompletionItemKind;
+  readonly insertText: string;
+  readonly documentation: string;
+  readonly detail?: string;
 }
 
 const SERVICE_PROPERTIES: readonly CompletionItem[] = [
@@ -33,7 +33,8 @@ const SERVICE_PROPERTIES: readonly CompletionItem[] = [
   {
     label: "interfaces",
     kind: 2,
-    insertText: "interfaces:\n  - domain: \"$1\"\n    env: \"$2\"\n    branch: \"$3\"",
+    insertText:
+      'interfaces:\n  - domain: "$1"\n    env: "$2"\n    branch: "$3"',
     documentation: "Array of interface definitions",
     detail: "array",
   },
@@ -44,7 +45,7 @@ const SERVICE_PROPERTIES: readonly CompletionItem[] = [
     documentation: "Array of dependency names",
     detail: "array",
   },
-] as const
+] as const;
 
 const INTERFACE_PROPERTIES: readonly CompletionItem[] = [
   {
@@ -71,11 +72,12 @@ const INTERFACE_PROPERTIES: readonly CompletionItem[] = [
   {
     label: "runtime",
     kind: 2,
-    insertText: "runtime:\n    type: \"$1\"\n    id: \"$2\"",
-    documentation: "Runtime locator (type: ec2|vm|k8s|lambda|container|paas|unknown, id: runtime identifier)",
+    insertText: 'runtime:\n    type: "$1"\n    id: "$2"',
+    documentation:
+      "Runtime locator (type: ec2|vm|k8s|lambda|container|paas|unknown, id: runtime identifier)",
     detail: "object",
   },
-] as const
+] as const;
 
 const ENV_VALUES: readonly CompletionItem[] = [
   {
@@ -96,7 +98,7 @@ const ENV_VALUES: readonly CompletionItem[] = [
     insertText: "development",
     documentation: "Development environment",
   },
-] as const
+] as const;
 
 const RUNTIME_TYPE_VALUES: readonly CompletionItem[] = [
   {
@@ -141,7 +143,7 @@ const RUNTIME_TYPE_VALUES: readonly CompletionItem[] = [
     insertText: "unknown",
     documentation: "Unknown runtime",
   },
-] as const
+] as const;
 
 const RUNTIME_PROPERTIES: readonly CompletionItem[] = [
   {
@@ -155,60 +157,78 @@ const RUNTIME_PROPERTIES: readonly CompletionItem[] = [
     label: "id",
     kind: 2,
     insertText: 'id: "$1"',
-    documentation: "Runtime identifier (e.g., instance ID, cluster/namespace, function name)",
+    documentation:
+      "Runtime identifier (e.g., instance ID, cluster/namespace, function name)",
     detail: "string",
   },
-] as const
+] as const;
 
 function getContextualCompletions(
   line: string,
-  position: number,
+  position: number
 ): readonly CompletionItem[] {
-  const beforeCursor = line.slice(0, position)
-  const trimmed = beforeCursor.trim()
-  const previousLines = line.split("\n").slice(0, -1).join("\n")
+  const beforeCursor = line.slice(0, position);
+  const trimmed = beforeCursor.trim();
+  const previousLines = line.split("\n").slice(0, -1).join("\n");
 
   if (trimmed.endsWith("env:")) {
-    return ENV_VALUES
+    return ENV_VALUES;
   }
 
-  if (trimmed.endsWith("runtime.type:") || (trimmed.includes("runtime:") && trimmed.endsWith("type:"))) {
-    return RUNTIME_TYPE_VALUES
+  if (
+    trimmed.endsWith("runtime.type:") ||
+    (trimmed.includes("runtime:") && trimmed.endsWith("type:"))
+  ) {
+    return RUNTIME_TYPE_VALUES;
   }
 
-  if (trimmed.includes("runtime:") && !trimmed.includes("type:") && !trimmed.includes("id:")) {
-    return RUNTIME_PROPERTIES
+  if (
+    trimmed.includes("runtime:") &&
+    !trimmed.includes("type:") &&
+    !trimmed.includes("id:")
+  ) {
+    return RUNTIME_PROPERTIES;
   }
 
-  const isInInterfacesArray = previousLines.includes("interfaces:") || trimmed.match(/^\s*-\s*$/)
-  const isInterfaceItem = trimmed.match(/^\s*-\s*\w+:/) && !trimmed.match(/^\s*-\s*name:/)
-  
+  const isInInterfacesArray =
+    previousLines.includes("interfaces:") || trimmed.match(/^\s*-\s*$/);
+  const isInterfaceItem =
+    trimmed.match(/^\s*-\s*\w+:/) && !trimmed.match(/^\s*-\s*name:/);
+
   if (isInInterfacesArray || isInterfaceItem) {
-    return INTERFACE_PROPERTIES
+    return INTERFACE_PROPERTIES;
   }
 
-  if (trimmed.match(/^\s*-\s*name:/) || (trimmed.match(/^\s*\w+:/) && !isInInterfacesArray)) {
-    return SERVICE_PROPERTIES
+  if (
+    trimmed.match(/^\s*-\s*name:/) ||
+    (trimmed.match(/^\s*\w+:/) && !isInInterfacesArray)
+  ) {
+    return SERVICE_PROPERTIES;
   }
 
-  return SERVICE_PROPERTIES
+  return SERVICE_PROPERTIES;
 }
 
 export function createYamlAutocompleteProvider(): languages.CompletionItemProvider {
   return {
     provideCompletionItems: (model, position) => {
-      const word = model.getWordUntilPosition(position)
+      const word = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
         startColumn: word.startColumn,
         endColumn: word.endColumn,
-      }
+      };
 
-      const lineContent = model.getLineContent(position.lineNumber)
-      const completions = getContextualCompletions(lineContent, position.column - 1)
+      const lineContent = model.getLineContent(position.lineNumber);
+      const completions = getContextualCompletions(
+        lineContent,
+        position.column - 1
+      );
 
-      const filtered = completions.filter((item) => item.label.toLowerCase().includes(word.word.toLowerCase()))
+      const filtered = completions.filter((item) =>
+        item.label.toLowerCase().includes(word.word.toLowerCase())
+      );
 
       return {
         suggestions: filtered.map((item) => ({
@@ -220,9 +240,8 @@ export function createYamlAutocompleteProvider(): languages.CompletionItemProvid
           detail: item.detail,
           range,
         })),
-      }
+      };
     },
     triggerCharacters: [":", "-", " "],
-  }
+  };
 }
-

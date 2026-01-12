@@ -1,4 +1,5 @@
 // Core table components and utilities
+/** biome-ignore-all lint/performance/noBarrelFile: it's okay */
 export { BottomBar } from "./bottom-bar";
 export { EmptyState, NoResults } from "./empty-states";
 export { SkeletonCell } from "./skeleton-cell";

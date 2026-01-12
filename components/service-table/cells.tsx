@@ -1,19 +1,37 @@
-"use client"
+"use client";
 
-import { memo, useState, useCallback, useMemo } from "react"
-import { Copy, ExternalLink, Terminal } from "lucide-react"
-
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Pill, PillIndicator } from "@/components/kibo-ui/pill"
-import type { EnvironmentInfo, GroupedService } from "./types"
-import { ENV_LABELS, ENV_ORDER, RUNTIME_LABELS } from "./constants"
+import { Copy } from "lucide-react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { Pill, PillIndicator } from "@/components/kibo-ui/pill";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ENV_LABELS, ENV_ORDER, RUNTIME_LABELS } from "./constants";
+import type { EnvironmentInfo, GroupedService } from "./types";
 
 /**
  * Props for EnvBadges component
  */
 interface EnvBadgesProps {
-  readonly environments: readonly EnvironmentInfo[]
+  readonly environments: readonly EnvironmentInfo[];
 }
 
 /**
@@ -21,54 +39,63 @@ interface EnvBadgesProps {
  * Displays one primary environment label with +N counter for additional environments
  * Popover on hover/focus shows all environments ordered PROD → STAGE → DEV
  */
-export const EnvBadges = memo(function EnvBadges({ environments }: EnvBadgesProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export const EnvBadges = memo(function EnvBadges({
+  environments,
+}: EnvBadgesProps) {
+  const [isOpen, setIsOpen] = useState(false);
 
-  const { sortedEnvs, primaryEnv, additionalCount, hasProduction } = useMemo(() => {
-    const uniqueEnvs = [...new Set(environments.map((e) => e.env))]
-    const sortedEnvs = uniqueEnvs.sort((a, b) => ENV_ORDER.indexOf(a) - ENV_ORDER.indexOf(b))
-    const hasProduction = sortedEnvs.includes("production")
-    const primaryEnv = sortedEnvs[0] ?? null
-    const additionalCount = sortedEnvs.length > 1 ? sortedEnvs.length - 1 : 0
+  const { sortedEnvs, primaryEnv, additionalCount, hasProduction } =
+    useMemo(() => {
+      const uniqueEnvs = [...new Set(environments.map((e) => e.env))];
+      const sortedEnvs = uniqueEnvs.sort(
+        (a, b) => ENV_ORDER.indexOf(a) - ENV_ORDER.indexOf(b)
+      );
+      const hasProduction = sortedEnvs.includes("production");
+      const primaryEnv = sortedEnvs[0] ?? null;
+      const additionalCount = sortedEnvs.length > 1 ? sortedEnvs.length - 1 : 0;
 
-    return { sortedEnvs, primaryEnv, additionalCount, hasProduction }
-  }, [environments])
+      return { sortedEnvs, primaryEnv, additionalCount, hasProduction };
+    }, [environments]);
 
   const sortedEnvironmentsForPopover = useMemo(() => {
     return [...environments].sort((a, b) => {
-      const aIndex = ENV_ORDER.indexOf(a.env)
-      const bIndex = ENV_ORDER.indexOf(b.env)
-      return aIndex - bIndex
-    })
-  }, [environments])
+      const aIndex = ENV_ORDER.indexOf(a.env);
+      const bIndex = ENV_ORDER.indexOf(b.env);
+      return aIndex - bIndex;
+    });
+  }, [environments]);
 
   if (sortedEnvs.length === 0) {
     return (
-      <div className="flex items-center h-5">
-        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+      <div className="flex h-5 items-center">
+        <span className="font-mono text-[11px] text-muted-foreground/40">
+          —
+        </span>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="flex items-center h-5">
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
+    <div className="flex h-5 items-center">
+      <Popover onOpenChange={setIsOpen} open={isOpen}>
         <PopoverTrigger asChild>
           <button
-            type="button"
-            className="inline-flex items-center focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+            className="inline-flex items-center rounded-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={(e) => e.stopPropagation()}
+            type="button"
           >
             <Pill
+              className="flex h-5 min-w-[60px] max-w-[120px] shrink-0 cursor-pointer items-center gap-1.5 px-2 py-0 transition-colors hover:bg-muted/50"
               variant="secondary"
-              className="h-5 min-w-[60px] max-w-[120px] flex items-center gap-1.5 px-2 py-0 shrink-0 cursor-pointer hover:bg-muted/50 transition-colors"
             >
-              {hasProduction && <PillIndicator variant="success" pulse={false} />}
-              <span className="text-[11px] font-mono text-muted-foreground/80 uppercase tracking-wide leading-none">
+              {hasProduction && (
+                <PillIndicator pulse={false} variant="success" />
+              )}
+              <span className="font-mono text-[11px] text-muted-foreground/80 uppercase leading-none tracking-wide">
                 {primaryEnv ? ENV_LABELS[primaryEnv] : "—"}
               </span>
               {additionalCount > 0 && (
-                <span className="text-[11px] font-mono text-muted-foreground/40 leading-none">
+                <span className="font-mono text-[11px] text-muted-foreground/40 leading-none">
                   +{additionalCount}
                 </span>
               )}
@@ -76,58 +103,62 @@ export const EnvBadges = memo(function EnvBadges({ environments }: EnvBadgesProp
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-96 p-3 dark:border-white/10 border-black/10 shadow-lg"
-          side="bottom"
           align="start"
-          sideOffset={4}
+          className="w-96 border-black/10 p-3 shadow-lg dark:border-white/10"
           onClick={(e) => e.stopPropagation()}
+          side="bottom"
+          sideOffset={4}
         >
           <div className="space-y-1.5">
-            <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2 px-1">
+            <div className="mb-2 px-1 font-medium text-[10px] text-muted-foreground/70 uppercase tracking-wide">
               Environments ({sortedEnvironmentsForPopover.length})
             </div>
             {sortedEnvironmentsForPopover.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground/60 py-2 px-1">No environments configured</div>
+              <div className="px-1 py-2 text-[11px] text-muted-foreground/60">
+                No environments configured
+              </div>
             ) : (
               sortedEnvironmentsForPopover.map((env, idx) => (
                 <div
+                  className="group/item flex items-center justify-between gap-2 rounded-md p-2 transition-colors hover:bg-muted/50"
                   key={`${env.domain}-${env.env}-${idx}`}
-                  className="flex items-center justify-between gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors group/item"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="inline-flex items-center gap-1.5 shrink-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <div className="inline-flex shrink-0 items-center gap-1.5">
                       {env.env === "production" && (
-                        <PillIndicator variant="success" pulse={false} />
+                        <PillIndicator pulse={false} variant="success" />
                       )}
-                      <span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wide min-w-12">
+                      <span className="min-w-12 font-mono text-[10px] text-muted-foreground/70 uppercase tracking-wide">
                         {ENV_LABELS[env.env]}
                       </span>
                     </div>
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-[11px] font-mono text-foreground truncate font-medium">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-medium font-mono text-[11px] text-foreground">
                         {env.domain}
                       </span>
                       {env.branch && (
-                        <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                        <span className="truncate font-mono text-[10px] text-muted-foreground/50">
                           branch: {env.branch}
                         </span>
                       )}
                       {env.runtimeType && env.runtimeId && (
-                        <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                        <span className="truncate font-mono text-[10px] text-muted-foreground/50">
                           {env.runtimeType}: {env.runtimeId}
                         </span>
                       )}
                     </div>
                   </div>
                   <button
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(env.domain)
-                      setIsOpen(false)
-                    }}
-                    className="p-1.5 hover:bg-muted rounded transition-colors shrink-0 opacity-0 group-hover/item:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     aria-label={`Copy ${env.domain}`}
+                    className="shrink-0 rounded p-1.5 opacity-0 transition-colors hover:bg-muted focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/item:opacity-100"
+                    onClick={() => {
+                      navigator.clipboard.writeText(env.domain).catch(() => {
+                        // Ignore clipboard errors
+                      });
+                      setIsOpen(false);
+                    }}
                     title="Copy domain"
+                    type="button"
                   >
                     <Copy className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
@@ -138,15 +169,15 @@ export const EnvBadges = memo(function EnvBadges({ environments }: EnvBadgesProp
         </PopoverContent>
       </Popover>
     </div>
-  )
-})
+  );
+});
 
 /**
  * Props for DomainsAffordance component
  */
 interface DomainsAffordanceProps {
-  readonly environments: readonly EnvironmentInfo[]
-  readonly domainsCount: number
+  readonly environments: readonly EnvironmentInfo[];
+  readonly domainsCount: number;
 }
 
 /**
@@ -156,73 +187,81 @@ export const DomainsAffordance = memo(function DomainsAffordance({
   environments,
   domainsCount,
 }: DomainsAffordanceProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleCopyDomain = useCallback((domain: string) => {
-    void navigator.clipboard.writeText(domain)
-    setIsOpen(false)
-  }, [])
+    navigator.clipboard.writeText(domain).catch(() => {
+      // Ignore clipboard errors
+    });
+    setIsOpen(false);
+  }, []);
 
   return (
-    <div className="flex items-center h-5">
+    <div className="flex h-5 items-center">
       {domainsCount === 0 ? (
-        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+        <span className="font-mono text-[11px] text-muted-foreground/40">
+          —
+        </span>
       ) : (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <Popover onOpenChange={setIsOpen} open={isOpen}>
           <PopoverTrigger asChild>
             <button
-              type="button"
-              className="text-[11px] font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-2 decoration-muted-foreground/30 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm leading-none"
+              className="rounded-sm font-mono text-[11px] text-muted-foreground leading-none decoration-muted-foreground/30 underline-offset-2 transition-colors hover:text-foreground hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               onClick={(e) => e.stopPropagation()}
+              type="button"
             >
               {domainsCount} {domainsCount === 1 ? "domain" : "domains"}
             </button>
           </PopoverTrigger>
           <PopoverContent
-            className="w-96 p-3 dark:border-white/10 border-black/10 shadow-lg"
-            side="bottom"
             align="start"
-            sideOffset={4}
+            className="w-96 border-black/10 p-3 shadow-lg dark:border-white/10"
             onClick={(e) => e.stopPropagation()}
+            side="bottom"
+            sideOffset={4}
           >
             <div className="space-y-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2 px-1">
+              <div className="mb-2 px-1 font-medium text-[10px] text-muted-foreground/70 uppercase tracking-wide">
                 Domains ({environments.length})
               </div>
               {environments.length === 0 ? (
-                <div className="text-[11px] text-muted-foreground/60 py-2 px-1">No domains configured</div>
+                <div className="px-1 py-2 text-[11px] text-muted-foreground/60">
+                  No domains configured
+                </div>
               ) : (
                 environments.map((env, idx) => (
                   <div
+                    className="group/item flex items-center justify-between gap-2 rounded-md p-2 transition-colors hover:bg-muted/50"
                     key={`${env.domain}-${env.env}-${idx}`}
-                    className="flex items-center justify-between gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors group/item"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="inline-flex items-center gap-1.5 shrink-0">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <div className="inline-flex shrink-0 items-center gap-1.5">
                         {env.env === "production" && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" aria-label="Production" />
+                          <div
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500"
+                            title="Production"
+                          />
                         )}
-                        <span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wide min-w-12">
+                        <span className="min-w-12 font-mono text-[10px] text-muted-foreground/70 uppercase tracking-wide">
                           {ENV_LABELS[env.env]}
                         </span>
                       </div>
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-[11px] font-mono text-foreground truncate font-medium">
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium font-mono text-[11px] text-foreground">
                           {env.domain}
                         </span>
                         {env.branch && (
-                          <span className="text-[10px] font-mono text-muted-foreground/50 truncate">
+                          <span className="truncate font-mono text-[10px] text-muted-foreground/50">
                             branch: {env.branch}
                           </span>
                         )}
                       </div>
                     </div>
                     <button
-                      type="button"
+                      className="shrink-0 rounded p-1.5 opacity-0 transition-colors hover:bg-muted focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/item:opacity-100"
                       onClick={() => handleCopyDomain(env.domain)}
-                      className="p-1.5 hover:bg-muted rounded transition-colors shrink-0 opacity-0 group-hover/item:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      aria-label={`Copy ${env.domain}`}
-                      title="Copy domain"
+                      title={`Copy ${env.domain}`}
+                      type="button"
                     >
                       <Copy className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
@@ -234,149 +273,139 @@ export const DomainsAffordance = memo(function DomainsAffordance({
         </Popover>
       )}
     </div>
-  )
-})
+  );
+});
 
 /**
  * Props for RuntimeFootprint component
  */
 interface RuntimeFootprintProps {
-  readonly runtimeFootprint: readonly string[]
+  readonly runtimeFootprint: readonly string[];
 }
 
 /**
  * Runtime footprint - displays aggregated runtime types
  */
-export const RuntimeFootprint = memo(function RuntimeFootprint({ runtimeFootprint }: RuntimeFootprintProps) {
+export const RuntimeFootprint = memo(function RuntimeFootprint({
+  runtimeFootprint,
+}: RuntimeFootprintProps) {
   const display =
     runtimeFootprint.length > 0
-      ? runtimeFootprint.map((rt) => RUNTIME_LABELS[rt] ?? rt.toUpperCase()).join("·")
-      : null
+      ? runtimeFootprint
+          .map((rt) => RUNTIME_LABELS[rt] ?? rt.toUpperCase())
+          .join("·")
+      : null;
 
   return (
-    <div className="flex items-center h-5">
+    <div className="flex h-5 items-center">
       {display ? (
-        <span className="text-[11px] font-mono text-muted-foreground/70 leading-none">{display}</span>
+        <span className="font-mono text-[11px] text-muted-foreground/70 leading-none">
+          {display}
+        </span>
       ) : (
-        <span className="text-[11px] font-mono text-muted-foreground/40">—</span>
+        <span className="font-mono text-[11px] text-muted-foreground/40">
+          —
+        </span>
       )}
     </div>
-  )
-})
+  );
+});
 
 /**
  * Props for RowActions component
  */
 interface RowActionsProps {
-  readonly service: GroupedService
+  readonly service: GroupedService;
+  readonly onEdit: (service: GroupedService) => void;
+  readonly onDelete: (service: GroupedService) => void;
 }
 
 /**
- * Row actions - always present, opacity changes on hover
+ * Row actions - three-dot menu with Edit and Delete options
  */
-export const RowActions = memo(function RowActions({ service }: RowActionsProps) {
-  const handleCopyPrimaryDomain = useCallback(() => {
-    const primaryEnv = service.environments.find((e) => e.env === "production") ?? service.environments[0]
-    if (primaryEnv) {
-      void navigator.clipboard.writeText(primaryEnv.domain)
-    }
-  }, [service.environments])
+export const RowActions = memo(function RowActions({
+  service,
+  onEdit,
+  onDelete,
+}: RowActionsProps) {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleOpenRepository = useCallback(() => {
-    if (service.repository) {
-      window.open(service.repository, "_blank", "noopener,noreferrer")
-    }
-  }, [service.repository])
+  const handleEdit = useCallback(() => {
+    // Close dropdown first, then open drawer
+    setIsDropdownOpen(false);
+    // Use setTimeout to ensure dropdown closes before drawer opens
+    // This prevents focus issues and ensures proper focus restoration
+    setTimeout(() => {
+      onEdit(service);
+      // The page component will handle focus restoration when drawer closes
+    }, 0);
+  }, [onEdit, service]);
 
-  const handleRuntimeAction = useCallback(() => {
-    const runtimeEnv = service.environments.find((e) => e.runtimeType && e.runtimeId)
-    if (!runtimeEnv?.runtimeId) {
-      return
-    }
+  const handleDeleteClick = useCallback(() => {
+    setIsDropdownOpen(false);
+    setIsDeleteDialogOpen(true);
+  }, []);
 
-    if (runtimeEnv.runtimeType === "ec2" && runtimeEnv.runtimeId.startsWith("i-")) {
-      const url = `https://console.aws.amazon.com/systems-manager/session-manager/${runtimeEnv.runtimeId}`
-      window.open(url, "_blank", "noopener,noreferrer")
-    } else if (runtimeEnv.runtimeType === "k8s" && runtimeEnv.runtimeId.includes("/")) {
-      const [cluster, namespace] = runtimeEnv.runtimeId.split("/")
-      const hint = `kubectl --context ${cluster} -n ${namespace} get pods`
-      void navigator.clipboard.writeText(hint)
-    }
-  }, [service.environments])
-
-  const hasRuntimeAction = service.environments.some(
-    (e) =>
-      e.runtimeType &&
-      e.runtimeId &&
-      ((e.runtimeType === "ec2" && e.runtimeId.startsWith("i-")) ||
-        (e.runtimeType === "k8s" && e.runtimeId.includes("/"))),
-  )
+  const handleDeleteConfirm = useCallback(() => {
+    setIsDeleteDialogOpen(false);
+    onDelete(service);
+  }, [onDelete, service]);
 
   return (
-    <TooltipProvider delayDuration={150}>
-      <div className="flex items-center justify-end gap-0.5 h-5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
-        {service.repository && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleOpenRepository()
-                }}
-                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="View repository"
-              >
-                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              View
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {service.domainsCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCopyPrimaryDomain()
-                }}
-                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Copy primary domain"
-              >
-                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              Copy
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {hasRuntimeAction && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleRuntimeAction()
-                }}
-                className="p-1 rounded transition-colors hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Open runtime"
-              >
-                <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              Runtime
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </TooltipProvider>
-  )
-})
+    <div className="flex h-5 items-center justify-end">
+      <DropdownMenu onOpenChange={setIsDropdownOpen} open={isDropdownOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label="Service actions"
+            className="flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={(e) => e.stopPropagation()}
+            ref={triggerRef}
+            type="button"
+          >
+            <span className="text-lg text-muted-foreground leading-none">
+              ⋯
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <DropdownMenuItem onClick={handleEdit}>Edit service</DropdownMenuItem>
+          <DropdownMenuItem onClick={handleDeleteClick} variant="destructive">
+            Delete service
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
+      <AlertDialog
+        onOpenChange={setIsDeleteDialogOpen}
+        open={isDeleteDialogOpen}
+      >
+        <AlertDialogContent
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete service</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{service.name}"? This action
+              cannot be undone and will remove all associated interfaces and
+              dependencies.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteConfirm}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+});

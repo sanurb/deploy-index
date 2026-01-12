@@ -1,13 +1,18 @@
-"use client"
+"use client";
 
-import { useState, useCallback } from "react"
-import { AnimatePresence, motion as m, MotionConfig, type Variants } from "motion/react"
-import { useTheme } from "@/components/theme-provider"
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion as m,
+  type Variants,
+} from "motion/react";
+import { useCallback, useState } from "react";
+import { useTheme } from "@/components/theme-provider";
 
-const ANIMATION_DURATION_MS = 600
-const SPRING_STIFFNESS = 300
-const SPRING_DAMPING = 20
-const TRANSITION_DURATION = 0.5
+const ANIMATION_DURATION_MS = 600;
+const SPRING_STIFFNESS = 300;
+const SPRING_DAMPING = 20;
+const TRANSITION_DURATION = 0.5;
 
 const modeVariants: Variants = {
   initial: {
@@ -31,7 +36,7 @@ const modeVariants: Variants = {
       duration: 0.3,
     },
   },
-}
+};
 
 const containerVariants: Variants = {
   hover: {
@@ -40,23 +45,23 @@ const containerVariants: Variants = {
   tap: {
     scale: 0.95,
   },
-}
+};
 
 export default function ModeToggle() {
-  const { resolvedTheme, setTheme } = useTheme()
-  const [isAnimating, setIsAnimating] = useState(false)
+  const { resolvedTheme, setTheme } = useTheme();
+  const [isAnimating, setIsAnimating] = useState(false);
 
   const handleToggle = useCallback(() => {
-    setIsAnimating(true)
-    const nextTheme = resolvedTheme === "light" ? "dark" : "light"
-    setTheme(nextTheme)
+    setIsAnimating(true);
+    const nextTheme = resolvedTheme === "light" ? "dark" : "light";
+    setTheme(nextTheme);
 
     setTimeout(() => {
-      setIsAnimating(false)
-    }, ANIMATION_DURATION_MS)
-  }, [resolvedTheme, setTheme])
+      setIsAnimating(false);
+    }, ANIMATION_DURATION_MS);
+  }, [resolvedTheme, setTheme]);
 
-  const isLight = resolvedTheme === "light"
+  const isLight = resolvedTheme === "light";
 
   return (
     <MotionConfig
@@ -66,75 +71,80 @@ export default function ModeToggle() {
       }}
     >
       <m.button
+        aria-label={`Switch to ${isLight ? "dark" : "light"} mode`}
+        className="relative flex h-8 min-w-8 items-center justify-center gap-1.5 overflow-hidden rounded-full bg-muted px-2 py-1.5 outline-none sm:h-9 sm:min-w-auto sm:px-3"
+        onClick={handleToggle}
         type="button"
         variants={containerVariants}
         whileHover="hover"
         whileTap="tap"
-        className="rounded-full bg-muted flex items-center justify-center gap-1.5 py-1.5 px-2 sm:px-3 overflow-hidden outline-none relative h-8 sm:h-9 min-w-8 sm:min-w-auto"
-        onClick={handleToggle}
-        aria-label={`Switch to ${isLight ? "dark" : "light"} mode`}
       >
-        <m.div className="size-6 sm:size-7 rounded-full flex items-center justify-center relative shrink-0" layout>
+        <m.div
+          className="relative flex size-6 shrink-0 items-center justify-center rounded-full sm:size-7"
+          layout
+        >
           <m.svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="100"
-            height="100"
-            viewBox="0 0 100 100"
-            fill="none"
-            className="size-5 sm:size-6 will-change-transform"
             animate={{
               rotate: isLight ? 0 : 180,
               scale: isAnimating ? [1, 1.1, 1] : 1,
             }}
+            aria-label={isLight ? "Light mode icon" : "Dark mode icon"}
+            className="size-5 will-change-transform sm:size-6"
+            fill="none"
+            height="100"
             transition={{
               duration: TRANSITION_DURATION,
             }}
+            viewBox="0 0 100 100"
+            width="100"
+            xmlns="http://www.w3.org/2000/svg"
           >
-            <rect width="100" height="100" />
+            <title>{isLight ? "Light mode" : "Dark mode"}</title>
+            <rect height="100" width="100" />
             <m.path
-              d="M50 18C58.4869 18 66.6262 21.3714 72.6274 27.3726C78.6286 33.3737 82 41.513 82 50C82 58.4869 78.6286 66.6262 72.6275 72.6274C66.6263 78.6286 58.487 82 50.0001 82L50 50L50 18Z"
-              className="will-change-transform fill-primary"
               animate={{
                 fillOpacity: isAnimating ? [1, 0.7, 1] : 1,
               }}
+              className="fill-primary will-change-transform"
+              d="M50 18C58.4869 18 66.6262 21.3714 72.6274 27.3726C78.6286 33.3737 82 41.513 82 50C82 58.4869 78.6286 66.6262 72.6275 72.6274C66.6263 78.6286 58.487 82 50.0001 82L50 50L50 18Z"
               transition={{
                 duration: 0.3,
                 times: [0, 0.5, 1],
               }}
             />
             <m.circle
-              cx="50"
-              cy="50"
-              r="30"
-              className="will-change-transform stroke-primary"
-              strokeWidth="4"
               animate={{
                 strokeWidth: isAnimating ? [4, 5, 4] : 4,
               }}
+              className="stroke-primary will-change-transform"
+              cx="50"
+              cy="50"
+              r="30"
+              strokeWidth="4"
               transition={{
                 duration: TRANSITION_DURATION,
                 times: [0, 0.5, 1],
               }}
             />
             <m.circle
-              cx="50"
-              cy="50"
-              r="12"
-              className="will-change-transform fill-primary"
               animate={{
                 scale: isAnimating ? [1, 0.9, 1] : 1,
               }}
+              className="fill-primary will-change-transform"
+              cx="50"
+              cy="50"
+              r="12"
               transition={{
                 duration: TRANSITION_DURATION,
                 times: [0, 0.5, 1],
               }}
             />
             <m.path
-              d="M50 62C53.1826 62 56.2348 60.7357 58.4853 58.4853C60.7357 56.2348 62 53.1826 62 50C62 46.8174 60.7357 43.7652 58.4853 41.5147C56.2348 39.2643 53.1826 38 50 38L50 50L50 62Z"
-              className="will-change-transform fill-primary-foreground"
               animate={{
                 fillOpacity: isAnimating ? [1, 0.7, 1] : 1,
               }}
+              className="fill-primary-foreground will-change-transform"
+              d="M50 62C53.1826 62 56.2348 60.7357 58.4853 58.4853C60.7357 56.2348 62 53.1826 62 50C62 46.8174 60.7357 43.7652 58.4853 41.5147C56.2348 39.2643 53.1826 38 50 38L50 50L50 62Z"
               transition={{
                 duration: TRANSITION_DURATION,
                 times: [0, 0.5, 1],
@@ -143,27 +153,27 @@ export default function ModeToggle() {
           </m.svg>
         </m.div>
 
-        <div className="hidden sm:flex items-center gap-1 font-medium text-xs">
+        <div className="hidden items-center gap-1 font-medium text-xs sm:flex">
           <AnimatePresence mode="wait">
             {isLight ? (
               <m.span
+                animate="visible"
+                className="font-medium text-primary"
+                exit="hidden"
+                initial="initial"
                 key="light"
                 variants={modeVariants}
-                initial="initial"
-                animate="visible"
-                exit="hidden"
-                className="font-medium text-primary"
               >
                 Light
               </m.span>
             ) : (
               <m.span
+                animate="visible"
+                className="font-medium text-primary"
+                exit="hidden"
+                initial="initial"
                 key="dark"
                 variants={modeVariants}
-                initial="initial"
-                animate="visible"
-                exit="hidden"
-                className="font-medium text-primary"
               >
                 Dark
               </m.span>
@@ -183,5 +193,5 @@ export default function ModeToggle() {
         </div>
       </m.button>
     </MotionConfig>
-  )
+  );
 }

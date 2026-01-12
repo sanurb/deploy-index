@@ -1,18 +1,18 @@
 "use client";
 
-import { updateTableSettingsAction } from "@/actions/update-table-settings-action";
-import {
-  TABLE_SETTINGS_COOKIE,
-  type TableId,
-  type TableSettings,
-  mergeWithDefaults,
-} from "@/utils/table-settings";
 import type {
   ColumnOrderState,
   ColumnSizingState,
   VisibilityState,
 } from "@tanstack/react-table";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { updateTableSettingsAction } from "@/actions/update-table-settings-action";
+import {
+  mergeWithDefaults,
+  TABLE_SETTINGS_COOKIE,
+  type TableId,
+  type TableSettings,
+} from "@/utils/table-settings";
 
 interface UseTableSettingsProps {
   tableId: TableId;
@@ -40,13 +40,13 @@ export function useTableSettings({
   const settings = mergeWithDefaults(initialSettings, tableId);
 
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
-    settings.columns,
+    settings.columns
   );
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(
-    settings.sizing,
+    settings.sizing
   );
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(
-    settings.order,
+    settings.order
   );
 
   // Track initial mount to skip first persist
@@ -60,7 +60,7 @@ export function useTableSettings({
     (
       visibility: VisibilityState,
       sizing: ColumnSizingState,
-      order: ColumnOrderState,
+      order: ColumnOrderState
     ) => {
       // Clear existing debounce
       if (debounceRef.current) {
@@ -79,7 +79,7 @@ export function useTableSettings({
           if (existingCookie) {
             try {
               allSettings = JSON.parse(
-                decodeURIComponent(existingCookie.split("=")[1] ?? "{}"),
+                decodeURIComponent(existingCookie.split("=")[1] ?? "{}")
               );
             } catch {
               // Invalid JSON, start fresh
@@ -90,8 +90,8 @@ export function useTableSettings({
           // Update only this table's settings
           allSettings[tableId] = {
             columns: visibility,
-            sizing: sizing,
-            order: order,
+            sizing,
+            order,
           };
 
           // Persist to server action (which sets the cookie)
@@ -104,7 +104,7 @@ export function useTableSettings({
         }
       }, 300);
     },
-    [tableId],
+    [tableId]
   );
 
   // Effect to persist changes (skip initial mount)

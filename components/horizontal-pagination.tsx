@@ -1,8 +1,8 @@
 "use client";
 
+import { Icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Icons } from "@/components/icons";
 
 interface HorizontalPaginationProps {
   canScrollLeft: boolean;
@@ -22,22 +22,22 @@ export function HorizontalPagination({
   return (
     <div className={cn("flex items-center space-x-2", className)}>
       <Button
-        variant="outline"
-        size="sm"
-        disabled={!canScrollLeft}
         className="size-6 p-0"
+        disabled={!canScrollLeft}
         onClick={onScrollLeft}
+        size="sm"
+        variant="outline"
       >
         <Icons.ArrowBack
           className={cn("size-3.5", canScrollLeft && "text-primary")}
         />
       </Button>
       <Button
-        variant="outline"
-        size="sm"
-        disabled={!canScrollRight}
         className="size-6 p-0"
+        disabled={!canScrollRight}
         onClick={onScrollRight}
+        size="sm"
+        variant="outline"
       >
         <Icons.ArrowForward
           className={cn("size-3.5", canScrollRight && "text-primary")}

@@ -1,8 +1,8 @@
+import type { VisibilityState } from "@tanstack/react-table";
+import { useCallback, useMemo } from "react";
 import type { StickyColumnConfig } from "@/components/table/core";
 import { cn } from "@/lib/utils";
 import { STICKY_COLUMNS } from "@/utils/table-configs";
-import type { VisibilityState } from "@tanstack/react-table";
-import { useCallback, useMemo } from "react";
 
 interface TableColumn {
   id: string;
@@ -36,13 +36,13 @@ export function useStickyColumns({
         .find((col) => col.id === id)
         ?.getIsVisible() ||
       (columnVisibility && columnVisibility[id] !== false),
-    [loading, table, columnVisibility],
+    [loading, table, columnVisibility]
   );
 
   // Get sticky column IDs for quick lookup
   const stickyColumnIds = useMemo(
     () => new Set(stickyColumns.map((col) => col.id)),
-    [stickyColumns],
+    [stickyColumns]
   );
 
   // Calculate dynamic sticky positions based on configuration
@@ -76,7 +76,7 @@ export function useStickyColumns({
         ? ({ "--stick-left": `${position}px` } as React.CSSProperties)
         : {};
     },
-    [stickyPositions],
+    [stickyPositions]
   );
 
   // Memoize getStickyClassName to return stable function reference
@@ -85,10 +85,10 @@ export function useStickyColumns({
       const isSticky = stickyColumnIds.has(columnId);
       return cn(
         baseClassName,
-        isSticky && "md:sticky md:left-[var(--stick-left)]",
+        isSticky && "md:sticky md:left-[var(--stick-left)]"
       );
     },
-    [stickyColumnIds],
+    [stickyColumnIds]
   );
 
   return {

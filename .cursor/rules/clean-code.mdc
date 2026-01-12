@@ -1,29 +1,99 @@
 ---
 description: Guidelines for writing clean, maintainable, and human-readable code. Apply these rules when writing or reviewing code to ensure consistency and quality.
-globs:
 alwaysApply: true
 ---
 
 # Clean Code Guidelines
 
-## Constants Over Magic Numbers
+Code should be written to minimize the time it would take for someone else to
+understand it.
 
+Primary metric
+- Time-to-understand: time for a capable engineer to explain behavior, invariants, failure modes, and how to modify without regressions.
+
+Secondary metrics
+- Change safety: likelihood a change causes regressions.
+- Local reasoning: can a reader reason about a module without reading the whole system.
+- Operational clarity: can operators diagnose issues from signals (logs/metrics/traces).
+
+Normative language
+- MUST / MUST NOT: required
+- SHOULD / SHOULD NOT: strong default
+- MAY: optional
+
+0.1 Correctness and explicitness
+- Code MUST make its assumptions explicit (types, invariants, contracts, boundaries).
+- Hidden coupling MUST NOT exist (implicit globals, invisible side effects, time-based behavior without injection).
+- Every non-trivial function MUST be explainable as:
+  - inputs, outputs, invariants, side effects, error cases, complexity.
+
+0.2 Local reasoning and small trusted cores
+- Systems SHOULD be designed around small, simple, well-tested cores.
+- Complexity MUST be pushed to the edges (I/O, framework wiring, integration glue).
+
+0.3 Safety by construction
+- Unsafe operations MUST be isolated behind narrow interfaces with validation at boundaries.
+- Uncertainty MUST be explicit in types (nullability, Result/Either, Option).
+
+0.4 Minimal cleverness
+- Clever code MUST NOT ship if it increases time-to-understand.
+- Prefer simple, boring patterns that scale across teams.
+
+0.5 Invariants-first modeling
+- Core domain types MUST encode invariants so invalid values cannot be constructed accidentally.
+- Parsing/validation MUST happen at boundaries, producing refined types or typed errors.
+- Domain code MUST operate only on validated types, not on raw primitives (string/number/any).
+- Avoid “primitive obsession”: use value objects / branded types / opaque types for identifiers, money, timestamps, percentages, non-empty strings, bounded integers, etc.
+- State machines MUST be modeled explicitly (tagged unions or classes) so impossible transitions are impossible to express.
+- Temporal coupling MUST be eliminated: APIs MUST NOT require callers to remember call order to be correct.
+
+A1) Constants Over Magic Numbers and domain vocabulary
+
+- You MUST NOT introduce unexplained literals inside business logic.
+- Use named constants for:
+  - units (timeouts, durations, sizes, rates),
+  - thresholds/limits,
+  - protocol/status codes,
+  - regex patterns,
+  - config keys and feature flags.
 - Replace hard-coded values with named constants
 - Use descriptive constant names that explain the value's purpose
 - Keep constants at the top of the file or in a dedicated constants file
 
-## Meaningful Names
+A2) Meaningful Names: unambiguous, information-dense, stable
 
 - Variables, functions, and classes should reveal their purpose
-- Names should explain why something exists and how it's used
+- Names MUST communicate what the entity is and why it exists.
+- Names MUST be specific. Avoid empty words: data, info, manager, handler, stuff.
+- Abbreviations MUST NOT be used unless unambiguous to the entire team.
+- Placeholder names MUST NOT exist beyond 5 lines of scope.
 - Avoid abbreviations unless they're universally understood
+- Use concrete names instead of abstract names
+- Attach extra information to a name, by using a suffix or prefix
+- Units MUST be encoded in names:
+  - *_MS, *_SECONDS, *_BYTES, *_KB, *_MB
+- Encodings/sanitization MUST be encoded:
+  - URL_ENCODED_*, HTML_ESCAPED_*, UTF8_BYTES_*
+- Risk MUST be encoded if unavoidable:
+  - UNSAFE_RAW_SQL (prefer eliminating it)
+- Avoid negated booleans:
+  - prefer isEnabled over isNotDisabled
 
-## Control Flow: Flat > Deep
+Placement
+- Constants MUST live in the narrowest scope that avoids duplication.
 
+Allowed literals (only if universally obvious and non-domain-specific)
+- 0, 1, -1 for indexing/loops
+- '', [], {} for empty values
+- If a reviewer can reasonably ask “why this value?”, it MUST be a named constant.
+
+A3) Control flow: flatten, make paths explicit, reduce surprise
+
+- Nesting depth MUST NOT exceed 2 per function body (excluding tiny callbacks). Refactor if it would.
 - Prefer guard clauses and early returns to reduce nesting and cognitive load.
-- **Avoid `switch` in application code** for maintainability (diff noise, fallthrough hazards); use lookup tables or strategy maps.
-- **Exception:** Exhaustive matches over _small, stable_ tagged unions are acceptable when enforced by the compiler (see TypeScript rules for a safe pattern).
-- Every path returns or throws—no implicit `undefined`.
+- Avoid `switch` in application code for maintainability (diff noise, fallthrough hazards); use lookup tables or strategy maps.
+- Exception: Exhaustive matches over _small, stable_ tagged unions are acceptable when enforced by the compiler (see TypeScript rules for a safe pattern).
+- Functions MUST NOT rely on implicit undefined. Returns must be explicit.
 
 ```ts
 // Table/strategy over switch:
@@ -35,54 +105,169 @@ const byStatus = {
 
 (byStatus[status] ?? renderUnknown)();
 ```
+- Group declarations into responsibility blocks.
+- Team consistency overrides personal style; formatter is the source of truth.
 
-## Smart Comments
+A4) Expressions: one idea per line, one concern per statement
 
-- Don't comment on what the code does - make the code self-documenting
-- Use comments to explain why something is done a certain way
-- Document APIs, complex algorithms, and non-obvious side effects
+Rules
+- A statement MUST do one conceptual thing.
+- Extract explaining variables when:
+  - expression is long,
+  - mixes concerns,
+  - non-trivial boolean logic,
+  - double negatives exist.
 
-## Single Responsibility
+Prohibitions
+- Nested ternaries MUST NOT be used.
+- Complex boolean expressions SHOULD be rewritten into named predicates.
 
-- Each function should do exactly one thing
-- Functions should be small and focused
-- If a function needs a comment to explain what it does, it should be split
+A5) Variables: minimize mutable state and cognitive load
 
-## DRY (Don't Repeat Yourself)
+Rules
+- Variables MUST have minimal scope.
+- Prefer const. Use let only when it reduces complexity.
+- Variables SHOULD be assigned once. If meaning changes, split it.
+- No shadowing.
+- Avoid flags (found, done) when control-flow makes intent clearer.
 
-- Extract repeated code into reusable functions
-- Share common logic through proper abstraction
-- Maintain single sources of truth
 
-## Clean Structure
+A6) Comments: encode reasoning, constraints, and contracts
 
-- Keep related code together
-- Organize code in a logical hierarchy
-- Use consistent file and folder naming conventions
+Core rule
+- Comments exist to explain why, constraints, invariants, non-obvious behavior, and trade-offs.
 
-## Encapsulation
+You MUST comment when
+- There is a non-obvious constraint (perf, security, compatibility, data contract).
+- There is a counter-intuitive decision (why X instead of Y).
+- There is an invariant the code relies on.
+- There is a known limitation and justification.
 
-- Hide implementation details
-- Expose clear interfaces
-- Move nested conditionals into well-named functions
+You MUST NOT comment when
+- It restates obvious code.
+- It compensates for vague naming (fix naming/code).
 
-## Code Quality Maintenance
+Required comment types
+- Module header (for non-trivial modules): responsibility, boundaries, invariants, dependencies.
+- Public API contracts: inputs, outputs, errors, side effects, complexity notes if relevant.
+- Invariants belong in code first, comments second, Comments MAY explain why the invariant exists, but MUST NOT be the only place the invariant lives.
 
-- Refactor continuously
-- Fix technical debt early
-- Leave code cleaner than you found it
+TODO/DEBT format
+- MUST be actionable and tracked:
+  - TODO(owner): action — reason — ticket
+  - DEBT(owner): workaround — removal condition — ticket
 
-## Testing
+A7) One task at a time (functional cohesion)
 
-- Write tests before fixing bugs
-- Keep tests readable and maintainable
-- Test edge cases and error conditions
+Rules
+- A function MUST have one purpose describable in one sentence without “and”.
+- If internal section comments are needed, extract helpers with descriptive names.
 
-## Version Control
+Function interface rules
+- Max 3 positional parameters. If more, use an options object.
+- Side effects MUST be visible in name or signature:
+  - save*/write*/send*/mutate* or injected I/O dependencies.
 
-- Write clear commit messages
-- Make small, focused commits
-- Use meaningful branch names
+A8) DRY with discipline (avoid abstraction debt)
+
+Rules
+- Remove true duplication that increases bug probability.
+- Do not abstract purely to reduce line count.
+- Apply the rule of three unless duplication is actively dangerous.
+- Abstractions MUST:
+  - reduce cognitive load,
+  - preserve locality,
+  - have a clear name and contract,
+  - not introduce hidden coupling.
+
+A9) Structure and layering (keep complexity at the edges)
+
+Rules
+- Related code MUST be co-located.
+- Glue code MUST live at the edges (framework, DB, HTTP).
+- Domain logic MUST remain free of infrastructure details.
+
+Recommended layering
+- domain: pure business rules, invariants, types
+- application: use-cases/orchestration
+- infrastructure: I/O, persistence, integrations
+- ui/presentation: rendering and interaction
+- tests: co-located when feasible
+
+A10) Encapsulation and API design
+
+Rules
+- Implementation details MUST be hidden behind stable interfaces.
+- APIs MUST be hard to misuse:
+  - validate inputs at boundaries,
+  - avoid “boolean parameter traps” (use options object or enum),
+  - avoid ambiguous defaults.
+- Constructors MUST be private when invariants exist; creation MUST go through factory/parse functions that validate.
+
+Error handling
+- Errors MUST be:
+  - typed or categorized,
+  - contextual (include who/what/where),
+  - actionable (how to remediate),
+  - non-leaky (do not expose secrets).
+
+A11) Performance and complexity (predictability over micro-optimizations)
+
+Rules
+- Before optimizing, you MUST do napkin math:
+  - expected sizes, frequency, latency budget, memory growth.
+- Unbounded loops or unbounded memory growth MUST NOT exist in production code.
+- Complexity MUST be stated in code review for non-trivial paths.
+
+Data structure selection
+- Choose structures that preserve readability and correctness.
+- If a structure is non-obvious, add a comment explaining why it is the best trade-off.
+
+A12) Concurrency and time (make nondeterminism explicit)
+
+Rules
+- Time MUST be injectable for testability.
+- Concurrency MUST be explicit:
+  - document invariants, ordering guarantees, and failure modes.
+- Shared mutable state SHOULD be avoided. If unavoidable:
+  - isolate it,
+  - protect it,
+  - test it with stress and race-focused tests.
+
+A13) Observability (make production debugging cheap)
+
+Rules
+- Non-trivial flows MUST emit signals:
+  - structured logs for key events,
+  - metrics for throughput/latency/error rate,
+  - traces for distributed boundaries if applicable.
+- Logs MUST avoid secrets and PII.
+- Each operational signal MUST answer:
+  - what happened, for whom, where, and why it failed.
+
+A14) Testing: specification quality, not just coverage
+
+Rules
+- Tests MUST read like a specification:
+  - Arrange/Act/Assert or Given/When/Then.
+- Test names MUST encode scenario + expected outcome.
+- Tests MUST fail clearly and locally.
+
+Required test categories (when applicable)
+- unit tests for pure logic and invariants
+- property tests for invariants (if logic is combinatorial or easy to fuzz)
+- integration tests for I/O boundaries
+- contract tests for external dependencies
+- regression tests for fixed bugs (must include minimal repro)
+
+Determinism
+- Tests MUST be deterministic. Inject time/randomness/network.
+
+A16) Technical debt policy (no unmanaged debt)
+
+Rules
+- Debt MUST be explicit, justified, tracked, and time-bounded.
+- Untracked debt MUST NOT be introduced.
 
 ## Core Principles
 
