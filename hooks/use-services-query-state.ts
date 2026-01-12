@@ -2,181 +2,214 @@
  * Services Query State Hook
  *
  * Manages all query state for the Services page with URL synchronization via nuqs.
- * Provides typed parsers, defaults, and imperative helpers for filter manipulation.
+ * Implements Linear-style two-layer architecture:
+ * - Layer 1: Free text search (q parameter)
+ * - Layer 2: Structured filters (env, owner, runtime, match)
  *
  * State is normalized to Sets internally for efficient lookups while serializing
  * as arrays in the URL for shareability.
+ *
+ * Invariants:
+ * - q is always a string (free text, never contains filter tokens)
+ * - Filter arrays are deduplicated
+ * - Empty arrays serialize as null in URL
+ * - match defaults to "all"
  */
 
 "use client";
 
-import { parseAsArrayOf, parseAsString, useQueryStates } from "nuqs";
-import { useCallback, useEffect, useMemo } from "react";
-import { parseSearchQuery } from "@/components/services/search-input-with-suggestions";
+import {
+  parseAsArrayOf,
+  parseAsString,
+  parseAsStringEnum,
+  useQueryStates,
+} from "nuqs";
+import { useCallback, useMemo } from "react";
+import type { FilterMatchMode } from "@/types/filters";
 
+/**
+ * Debounce delay for search input changes (milliseconds).
+ * Prevents excessive URL updates while typing.
+ */
 const QUERY_BAR_DEBOUNCE_MS = 200;
 
+/**
+ * Valid environment values for services.
+ */
 export type Environment = "production" | "staging" | "development";
 
+/**
+ * Complete query state for the services table.
+ * All fields are readonly to enforce immutability.
+ */
 export interface ServicesQueryState {
   readonly q: string;
   readonly env: readonly Environment[];
-  readonly runtime: readonly string[];
   readonly owner: readonly string[];
+  readonly runtime: readonly string[];
+  readonly match: FilterMatchMode;
 }
 
+/**
+ * Helper functions for manipulating query state.
+ * All mutations happen through these controlled interfaces.
+ */
 interface ServicesQueryStateHelpers {
   readonly setQ: (query: string) => void;
+  readonly setEnv: (environments: readonly Environment[]) => void;
   readonly toggleEnv: (env: Environment) => void;
-  readonly setRuntime: (runtimes: readonly string[]) => void;
   readonly setOwner: (owners: readonly string[]) => void;
+  readonly setRuntime: (runtimes: readonly string[]) => void;
+  readonly setMatch: (mode: FilterMatchMode) => void;
   readonly clearFilters: () => void;
-  readonly activeCount: number;
+  readonly activeFilterCount: number;
 }
 
+/**
+ * URL query parameter schema with type-safe parsers.
+ * Defines how state is serialized to/from URL.
+ */
 const servicesQuerySchema = {
   q: parseAsString.withDefault(""),
   env: parseAsArrayOf(parseAsString).withDefault([]),
-  runtime: parseAsArrayOf(parseAsString).withDefault([]),
   owner: parseAsArrayOf(parseAsString).withDefault([]),
+  runtime: parseAsArrayOf(parseAsString).withDefault([]),
+  match: parseAsStringEnum<FilterMatchMode>(["all", "any"]).withDefault("all"),
 } as const;
+
+/**
+ * Type guard: checks if a string is a valid Environment.
+ *
+ * @param value - String to validate
+ * @returns True if value is a valid Environment
+ */
+function isValidEnvironment(value: string): value is Environment {
+  return (
+    value === "production" || value === "staging" || value === "development"
+  );
+}
+
+/**
+ * Normalizes environment array by filtering out invalid values.
+ *
+ * @param rawEnv - Raw array from URL parameters
+ * @returns Array of valid Environment values only
+ */
+function normalizeEnvironments(
+  rawEnv: readonly string[]
+): readonly Environment[] {
+  return rawEnv.filter(isValidEnvironment);
+}
 
 /**
  * Hook for managing Services page query state with URL synchronization.
  *
- * All state is synced to URL query parameters for shareability.
- * Arrays are normalized to Sets internally for efficient operations.
+ * Provides a clean API for reading and updating search and filter state.
+ * All changes are synced to URL query parameters for shareability and
+ * browser back/forward navigation.
+ *
+ * @returns Current state and helper functions for mutations
  */
 export function useServicesQueryState(): ServicesQueryState &
   ServicesQueryStateHelpers {
-  const [params, setParams] = useQueryStates(servicesQuerySchema);
+  const [params, setParams] = useQueryStates(servicesQuerySchema, {
+    history: "push",
+    shallow: false,
+  });
 
-  // Parse filters from query string and sync to separate filter arrays
-  const parsedFilters = useMemo(() => {
-    const query = params.q ?? "";
-    if (query.trim().length === 0) {
-      return {
-        env: [] as readonly Environment[],
-        runtime: [] as readonly string[],
-        owner: [] as readonly string[],
-      };
-    }
-    const parsed = parseSearchQuery(query);
-    return {
-      env: parsed.filters.env,
-      runtime: parsed.filters.runtime,
-      owner: parsed.filters.owner,
-    };
-  }, [params.q]);
-
-  // Sync parsed filters to URL params if they differ
-  useEffect(() => {
-    const currentEnv = (params.env ?? []) as readonly Environment[];
-    const currentRuntime = params.runtime ?? [];
-    const currentOwner = params.owner ?? [];
-
-    const envChanged =
-      currentEnv.length !== parsedFilters.env.length ||
-      !currentEnv.every((e) => parsedFilters.env.includes(e));
-    const runtimeChanged =
-      currentRuntime.length !== parsedFilters.runtime.length ||
-      !currentRuntime.every((r) => parsedFilters.runtime.includes(r));
-    const ownerChanged =
-      currentOwner.length !== parsedFilters.owner.length ||
-      !currentOwner.every((o) => parsedFilters.owner.includes(o));
-
-    if (envChanged || runtimeChanged || ownerChanged) {
-      setParams({
-        env:
-          parsedFilters.env.length > 0 ? Array.from(parsedFilters.env) : null,
-        runtime:
-          parsedFilters.runtime.length > 0
-            ? Array.from(parsedFilters.runtime)
-            : null,
-        owner:
-          parsedFilters.owner.length > 0
-            ? Array.from(parsedFilters.owner)
-            : null,
-      });
-    }
-  }, [parsedFilters, params.env, params.runtime, params.owner, setParams]);
-
+  // Normalize state from URL parameters
   const normalizedState: ServicesQueryState = useMemo(
     () => ({
-      q: params.q ?? "",
-      env: parsedFilters.env,
-      runtime: parsedFilters.runtime,
-      owner: parsedFilters.owner,
+      q: params.q?.trim() ?? "",
+      env: normalizeEnvironments(params.env ?? []),
+      owner: Array.from(new Set(params.owner ?? [])),
+      runtime: Array.from(new Set(params.runtime ?? [])),
+      match: params.match ?? "all",
     }),
-    [params.q, parsedFilters]
+    [params]
   );
 
-  const envSet = useMemo(
-    () => new Set(normalizedState.env),
-    [normalizedState.env]
-  );
-
+  // Helper: Set free text search query
   const setQ = useCallback(
     (query: string) => {
-      setParams({ q: query || null });
+      const trimmedQuery = query.trim();
+      setParams({ q: trimmedQuery.length > 0 ? trimmedQuery : null });
     },
     [setParams]
   );
 
+  // Helper: Set environment filters (replace all)
+  const setEnv = useCallback(
+    (environments: readonly Environment[]) => {
+      const uniqueEnv = Array.from(new Set(environments));
+      setParams({ env: uniqueEnv.length > 0 ? uniqueEnv : null });
+    },
+    [setParams]
+  );
+
+  // Helper: Toggle single environment filter
   const toggleEnv = useCallback(
     (env: Environment) => {
-      const currentSet = new Set(envSet);
+      const currentSet = new Set(normalizedState.env);
+
       if (currentSet.has(env)) {
         currentSet.delete(env);
       } else {
         currentSet.add(env);
       }
-      setParams({
-        env: currentSet.size > 0 ? Array.from(currentSet) : null,
-      });
+
+      const newEnv = Array.from(currentSet);
+      setParams({ env: newEnv.length > 0 ? newEnv : null });
     },
-    [envSet, setParams]
+    [normalizedState.env, setParams]
   );
 
-  const setRuntime = useCallback(
-    (runtimes: readonly string[]) => {
-      setParams({
-        runtime: runtimes.length > 0 ? Array.from(runtimes) : null,
-      });
-    },
-    [setParams]
-  );
-
+  // Helper: Set owner filters (replace all)
   const setOwner = useCallback(
     (owners: readonly string[]) => {
-      setParams({
-        owner: owners.length > 0 ? Array.from(owners) : null,
-      });
+      const uniqueOwners = Array.from(new Set(owners));
+      setParams({ owner: uniqueOwners.length > 0 ? uniqueOwners : null });
     },
     [setParams]
   );
 
+  // Helper: Set runtime filters (replace all)
+  const setRuntime = useCallback(
+    (runtimes: readonly string[]) => {
+      const uniqueRuntimes = Array.from(new Set(runtimes));
+      setParams({ runtime: uniqueRuntimes.length > 0 ? uniqueRuntimes : null });
+    },
+    [setParams]
+  );
+
+  // Helper: Set filter match mode
+  const setMatch = useCallback(
+    (mode: FilterMatchMode) => {
+      setParams({ match: mode });
+    },
+    [setParams]
+  );
+
+  // Helper: Clear all structured filters (preserves free text search)
   const clearFilters = useCallback(() => {
     setParams({
-      q: null,
       env: null,
-      runtime: null,
       owner: null,
+      runtime: null,
+      match: "all",
     });
   }, [setParams]);
 
-  const activeCount = useMemo(() => {
+  // Compute active filter count (excludes free text search)
+  const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (normalizedState.q.trim().length > 0) {
-      count += 1;
-    }
     if (normalizedState.env.length > 0) {
       count += 1;
     }
-    if (normalizedState.runtime.length > 0) {
+    if (normalizedState.owner.length > 0) {
       count += 1;
     }
-    if (normalizedState.owner.length > 0) {
+    if (normalizedState.runtime.length > 0) {
       count += 1;
     }
     return count;
@@ -185,11 +218,13 @@ export function useServicesQueryState(): ServicesQueryState &
   return {
     ...normalizedState,
     setQ,
+    setEnv,
     toggleEnv,
-    setRuntime,
     setOwner,
+    setRuntime,
+    setMatch,
     clearFilters,
-    activeCount,
+    activeFilterCount,
   };
 }
 

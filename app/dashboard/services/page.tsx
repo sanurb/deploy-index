@@ -17,7 +17,8 @@ import type {
   GroupedService,
 } from "@/components/service-table/types";
 import { convertServicesToGrouped } from "@/components/service-table/utils";
-import { QueryBar } from "@/components/services/query-bar";
+import { FilterChipsRow } from "@/components/services/filter-chips-row";
+import { GlobalSearchBar } from "@/components/services/global-search-bar";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -332,14 +333,28 @@ export default function ServicesPage() {
             </div>
           </div>
 
-          {/* Query Bar - Search-first with filter tokens, 16px spacing */}
+          {/* Two-Layer Search + Filters - Linear style */}
           {hasServices && (
-            <div className="space-y-2">
-              <QueryBar
+            <div className="space-y-3">
+              {/* Layer 1: Global Search Bar (free text only) */}
+              <GlobalSearchBar
+                onChange={queryState.setQ}
+                value={queryState.q}
+              />
+
+              {/* Layer 2: Filter Chips Row (structured filters only) */}
+              <FilterChipsRow
                 availableOwners={availableOwners}
                 availableRuntimes={availableRuntimes}
-                onQChange={queryState.setQ}
-                queryState={queryState}
+                env={queryState.env}
+                match={queryState.match}
+                onClearFilters={queryState.clearFilters}
+                onEnvChange={queryState.setEnv}
+                onMatchChange={queryState.setMatch}
+                onOwnerChange={queryState.setOwner}
+                onRuntimeChange={queryState.setRuntime}
+                owner={queryState.owner}
+                runtime={queryState.runtime}
               />
             </div>
           )}
