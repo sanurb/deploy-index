@@ -38,9 +38,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * Height of the search bar in pixels.
- * Fixed to match Linear's compact, focused design.
+ * Matches toolbar control height for consistent alignment.
  */
-const SEARCH_BAR_HEIGHT_PX = 40;
+const SEARCH_BAR_HEIGHT_PX = 36;
 
 /**
  * Border radius in pixels for the search input.

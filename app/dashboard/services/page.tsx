@@ -1,34 +1,28 @@
 "use client";
 
 import { Download, Package, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CommandPalette } from "@/components/command-palette";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
-import { ServiceTable } from "@/components/service-table";
-import { CreateServiceDrawer } from "@/components/service-table/create-service-drawer";
-import { deriveVisibleServices } from "@/components/service-table/derive-visible-services";
-import {
-  createNewServiceTransactions,
-  createUpdateServiceTransactions,
-} from "@/components/service-table/service-transactions";
-import type {
-  CreateServiceFormData,
-  GroupedService,
-} from "@/components/service-table/types";
+import type { GroupedService } from "@/components/service-table/types";
 import { convertServicesToGrouped } from "@/components/service-table/utils";
-import { FilterChipsRow } from "@/components/services/filter-chips-row";
 import { GlobalSearchBar } from "@/components/services/global-search-bar";
+import { ServicesContent } from "@/components/services/services-content";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useServicesQueryState } from "@/hooks/use-services-query-state";
 import { db } from "@/lib/db";
 
@@ -37,41 +31,152 @@ const PAGE_DESCRIPTION =
   "Manage and track your deployed services across environments.";
 
 /**
- * Restores focus to an element if it's still in the DOM and focusable
+ * Loading fallback for Suspense boundary.
+ * Shown while useSearchParams() resolves during dynamic rendering.
  */
-function restoreFocus(element: HTMLElement | null): void {
-  if (!element) {
-    return;
-  }
+function ServicesContentFallback() {
+  return (
+    <div className="space-y-4">
+      {/* Filter skeleton */}
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-8 w-20" />
+      </div>
 
-  // Check if element is still in the DOM and focusable
-  if (document.contains(element) && typeof element.focus === "function") {
-    try {
-      element.focus();
-    } catch {
-      // If focus fails, try to focus the table container instead
-      const tableContainer = document.querySelector(
-        '[data-slot="table-container"]'
-      ) as HTMLElement;
-      if (tableContainer) {
-        tableContainer.focus();
+      {/* Table skeleton */}
+      <div className="space-y-2">
+        {Array.from({ length: 5 }, (_, i) => `skeleton-row-${i}`).map((key) => (
+          <div
+            className="flex items-center gap-4 rounded border border-border/40 bg-card p-4"
+            key={key}
+          >
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="ml-auto h-8 w-8 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Toolbar row component with search and actions.
+ * Rendered in Suspense boundary to access query state.
+ */
+function ToolbarRowContent({
+  canCreate,
+  groupedServices,
+  onCreateService,
+}: {
+  readonly canCreate: boolean;
+  readonly groupedServices: readonly GroupedService[];
+  readonly onCreateService: () => void;
+}) {
+  const queryState = useServicesQueryState();
+
+  const hasFilteredServices = useMemo(() => {
+    const hasQuery = queryState.q.trim().length > 0;
+    const hasFilters =
+      queryState.env.length > 0 ||
+      queryState.runtime.length > 0 ||
+      queryState.owner.length > 0;
+    return hasQuery || hasFilters;
+  }, [queryState]);
+
+  const handleExportCsv = useCallback(() => {
+    import("@/components/service-table/export").then(
+      ({ exportServicesToCsv }) => {
+        exportServicesToCsv(groupedServices);
       }
-    }
-  }
+    );
+  }, [groupedServices]);
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      {/* Left: Search */}
+      <div className="w-full min-w-[320px] max-w-[560px]">
+        <GlobalSearchBar onChange={queryState.setQ} value={queryState.q} />
+      </div>
+
+      {/* Right: Actions */}
+      <div className="flex items-center justify-end gap-2">
+        {/* Export CSV - Icon only with tooltip */}
+        {hasFilteredServices && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label="Export to CSV"
+                className="h-9"
+                onClick={handleExportCsv}
+                size="icon"
+                variant="ghost"
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export CSV</TooltipContent>
+          </Tooltip>
+        )}
+
+        {/* Create Service - Responsive: text+icon on desktop, icon-only on mobile */}
+        {canCreate && (
+          <Button
+            aria-label="Create service"
+            className="h-9"
+            onClick={onCreateService}
+          >
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">New service</span>
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Toolbar row wrapper that handles Suspense boundary.
+ */
+function ToolbarRow({
+  canCreate,
+  groupedServices,
+  onCreateService,
+}: {
+  readonly canCreate: boolean;
+  readonly groupedServices: readonly GroupedService[];
+  readonly onCreateService: () => void;
+}) {
+  return (
+    <Suspense fallback={<ToolbarRowSkeleton />}>
+      <ToolbarRowContent
+        canCreate={canCreate}
+        groupedServices={groupedServices}
+        onCreateService={onCreateService}
+      />
+    </Suspense>
+  );
+}
+
+/**
+ * Loading skeleton for toolbar row.
+ */
+function ToolbarRowSkeleton() {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      <Skeleton className="h-9 w-full min-w-[320px] max-w-[560px]" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-9 w-9" />
+        <Skeleton className="h-9 w-24" />
+      </div>
+    </div>
+  );
 }
 
 export default function ServicesPage() {
   const { user } = db.useAuth();
   const userId = user?.id && typeof user.id === "string" ? user.id : null;
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [editingService, setEditingService] = useState<GroupedService | null>(
-    null
-  );
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  // Query state management via URL-synced hook
-  const queryState = useServicesQueryState();
+  const [createServiceTrigger, setCreateServiceTrigger] = useState(0);
 
   // Query user's organizations and memberships to check roles
   const { data: orgData } = db.useQuery(
@@ -177,14 +282,7 @@ export default function ServicesPage() {
     return Array.from(ownerSet).sort();
   }, [groupedServices]);
 
-  // Derive visible services from query state (pure selector, no side effects)
-  const visibleServices = useMemo(
-    () => deriveVisibleServices(groupedServices, queryState),
-    [groupedServices, queryState]
-  );
-
   const hasServices = groupedServices.length > 0;
-  const hasFilteredServices = visibleServices.length > 0;
 
   // Keyboard shortcut for command palette
   useEffect(() => {
@@ -199,167 +297,31 @@ export default function ServicesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const handleCreateService = () => {
-    if (canCreate) {
-      setEditingService(null);
-      setIsDrawerOpen(true);
-    }
-  };
-
-  const handleEditService = useCallback(
-    (service: GroupedService) => {
-      if (canCreate) {
-        // Store the currently focused element before opening drawer
-        previousFocusRef.current =
-          (document.activeElement as HTMLElement) || null;
-        setEditingService(service);
-        setIsDrawerOpen(true);
-      }
-    },
-    [canCreate]
-  );
-
-  const handleDeleteService = useCallback(
-    async (service: GroupedService) => {
-      if (!userId) {
-        return;
-      }
-
-      try {
-        // Delete service - cascades to interfaces and dependencies
-        await db.transact([db.tx.services[service.id].delete()]);
-      } catch (error) {
-        console.error("Failed to delete service:", error);
-        // TODO: Show error toast
-      }
-    },
-    [userId]
-  );
-
-  const handleExportCsv = useCallback(() => {
-    // Import and use the export function
-    import("@/components/service-table/export").then(
-      ({ exportServicesToCsv }) => {
-        exportServicesToCsv(groupedServices);
-      }
-    );
-  }, [groupedServices]);
-
-  const handleServiceSubmit = useCallback(
-    async (data: CreateServiceFormData) => {
-      if (!userId || organizationIds.length === 0) {
-        return;
-      }
-
-      const organizationId = organizationIds[0];
-      const isEditing = editingService !== null;
-
-      if (isEditing && editingService) {
-        // Update existing service
-        const serviceId = editingService.id;
-
-        // Find the raw service to get existing interfaces and dependencies with IDs
-        const rawService = rawServices.find((s) => s.id === serviceId);
-        if (!rawService) {
-          console.error("Service not found for editing");
-          return;
-        }
-
-        const transactions = createUpdateServiceTransactions(
-          db,
-          serviceId,
-          userId,
-          data,
-          rawService
-        );
-
-        await db.transact(transactions);
-      } else {
-        // Create new service
-        const transactions = createNewServiceTransactions(
-          db,
-          organizationId,
-          userId,
-          data
-        );
-
-        await db.transact(transactions);
-      }
-    },
-    [userId, organizationIds, editingService, rawServices]
-  );
+  // Handler to trigger create service from toolbar
+  const handleCreateService = useCallback(() => {
+    setCreateServiceTrigger((prev) => prev + 1);
+  }, []);
 
   return (
     <ProtectedRoute>
       <DashboardLayout>
         <div className="space-y-4">
-          {/* PageHeader with Actions - Strict hierarchy, 8/16px rhythm */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="font-bold text-3xl tracking-tight">
-                {PAGE_TITLE}
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                {PAGE_DESCRIPTION}
-              </p>
-            </div>
-
-            {/* Actions - Right-aligned, icon-only, consistent hit areas */}
-            <div className="flex items-center gap-2">
-              {/* CSV Export - Tertiary, reduced prominence */}
-              {hasFilteredServices && (
-                <Button
-                  aria-label="Export to CSV"
-                  className="h-[42px] w-10"
-                  onClick={handleExportCsv}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-              )}
-
-              {/* Create service - Primary CTA, isolated */}
-              {canCreate && (
-                <Button
-                  aria-label="Create service"
-                  className="h-[42px] w-10"
-                  onClick={handleCreateService}
-                  size="icon"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
+          {/* Page Header */}
+          <div className="space-y-1">
+            <h1 className="font-bold text-3xl tracking-tight">{PAGE_TITLE}</h1>
+            <p className="text-muted-foreground text-sm">{PAGE_DESCRIPTION}</p>
           </div>
 
-          {/* Two-Layer Search + Filters - Linear style */}
-          {hasServices && (
-            <div className="space-y-3">
-              {/* Layer 1: Global Search Bar (free text only) */}
-              <GlobalSearchBar
-                onChange={queryState.setQ}
-                value={queryState.q}
-              />
-
-              {/* Layer 2: Filter Chips Row (structured filters only) */}
-              <FilterChipsRow
-                availableOwners={availableOwners}
-                availableRuntimes={availableRuntimes}
-                env={queryState.env}
-                match={queryState.match}
-                onClearFilters={queryState.clearFilters}
-                onEnvChange={queryState.setEnv}
-                onMatchChange={queryState.setMatch}
-                onOwnerChange={queryState.setOwner}
-                onRuntimeChange={queryState.setRuntime}
-                owner={queryState.owner}
-                runtime={queryState.runtime}
-              />
-            </div>
+          {/* Toolbar Row - Search + Actions */}
+          {!isLoading && hasServices && userId && (
+            <ToolbarRow
+              canCreate={canCreate}
+              groupedServices={groupedServices}
+              onCreateService={handleCreateService}
+            />
           )}
 
-          {/* Content Area */}
+          {/* Content Area with Suspense boundary */}
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 5 }, (_, i) => `skeleton-row-${i}`).map(
@@ -379,48 +341,23 @@ export default function ServicesPage() {
             </div>
           )}
 
-          {!isLoading && hasServices && hasFilteredServices && (
-            <ServiceTable
-              onDelete={handleDeleteService}
-              onEdit={handleEditService}
-              services={visibleServices}
-              showHeader={false}
-              yamlContent=""
-            />
+          {!isLoading && hasServices && userId && (
+            <Suspense fallback={<ServicesContentFallback />}>
+              <ServicesContent
+                availableOwners={availableOwners}
+                availableRuntimes={availableRuntimes}
+                canCreate={canCreate}
+                createServiceTrigger={createServiceTrigger}
+                existingServiceNames={existingServiceNames}
+                groupedServices={groupedServices}
+                organizationIds={organizationIds}
+                rawServices={rawServices}
+                userId={userId}
+              />
+            </Suspense>
           )}
 
-          {!isLoading &&
-            hasServices &&
-            !hasFilteredServices &&
-            (queryState.q.trim().length > 0 ||
-              queryState.env.length > 0 ||
-              queryState.runtime.length > 0 ||
-              queryState.owner.length > 0) && (
-              <Empty className="border-border/40">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <Package className="size-6" />
-                  </EmptyMedia>
-                  <EmptyTitle>No services match your filters</EmptyTitle>
-                  <EmptyDescription>
-                    Try adjusting your search query or removing filters to see
-                    more results.
-                  </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button
-                    onClick={() => {
-                      queryState.clearFilters();
-                    }}
-                    variant="outline"
-                  >
-                    Clear filters
-                  </Button>
-                </EmptyContent>
-              </Empty>
-            )}
-
-          {!(isLoading || hasServices) && (
+          {!isLoading && !hasServices && (
             <Empty className="border-border/40 border-dashed">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -433,36 +370,8 @@ export default function ServicesPage() {
                   inventory.
                 </EmptyDescription>
               </EmptyHeader>
-              {canCreate && (
-                <EmptyContent>
-                  <Button onClick={handleCreateService}>
-                    <Plus className="mr-2 size-4" />
-                    Create service
-                  </Button>
-                </EmptyContent>
-              )}
             </Empty>
           )}
-
-          <CreateServiceDrawer
-            canCreate={canCreate}
-            editingService={editingService}
-            existingServiceNames={existingServiceNames}
-            onOpenChange={useCallback((open: boolean) => {
-              setIsDrawerOpen(open);
-              if (!open) {
-                setEditingService(null);
-                // Restore focus to the previously focused element
-                // Use setTimeout to ensure Sheet has fully closed and DOM has updated
-                setTimeout(() => {
-                  restoreFocus(previousFocusRef.current);
-                  previousFocusRef.current = null;
-                }, 100);
-              }
-            }, [])}
-            onSubmit={handleServiceSubmit}
-            open={isDrawerOpen}
-          />
 
           <CommandPalette
             onOpenChange={setCommandPaletteOpen}
