@@ -16,11 +16,9 @@ export function AppHeader() {
           src="/icon.svg"
           width={32}
         />
-        <div className="min-w-0">
-          <h2 className="truncate font-sans text-base text-foreground leading-none tracking-tight sm:text-lg md:text-xl">
-            <span className="font-normal text-lg">Deploy</span>
-            <span className="font-extrabold text-lg">Index</span>
-          </h2>
+        <div className="typography min-w-0">
+          <span className="font-normal text-lg">Deploy</span>
+          <span className="font-extrabold text-lg">Index</span>
         </div>
       </Link>
 

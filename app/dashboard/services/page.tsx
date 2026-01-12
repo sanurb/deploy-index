@@ -1,12 +1,13 @@
 "use client";
 
-import { Download, Package, Plus, Search } from "lucide-react";
+import { Download, Package, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CommandPalette } from "@/components/command-palette";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import { ServiceTable } from "@/components/service-table";
 import { CreateServiceDrawer } from "@/components/service-table/create-service-drawer";
+import { deriveVisibleServices } from "@/components/service-table/derive-visible-services";
 import {
   createNewServiceTransactions,
   createUpdateServiceTransactions,
@@ -15,10 +16,8 @@ import type {
   CreateServiceFormData,
   GroupedService,
 } from "@/components/service-table/types";
-import {
-  calculateSearchScore,
-  convertServicesToGrouped,
-} from "@/components/service-table/utils";
+import { convertServicesToGrouped } from "@/components/service-table/utils";
+import { QueryBar } from "@/components/services/query-bar";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -28,8 +27,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useServicesQueryState } from "@/hooks/use-services-query-state";
 import { db } from "@/lib/db";
 
 const PAGE_TITLE = "Services";
@@ -68,9 +67,10 @@ export default function ServicesPage() {
   const [editingService, setEditingService] = useState<GroupedService | null>(
     null
   );
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Query state management via URL-synced hook
+  const queryState = useServicesQueryState();
 
   // Query user's organizations and memberships to check roles
   const { data: orgData } = db.useQuery(
@@ -157,31 +157,33 @@ export default function ServicesPage() {
     [rawServices]
   );
 
-  // Filter services based on search query
-  const filteredGroupedServices = useMemo((): readonly GroupedService[] => {
-    if (!searchQuery.trim()) {
-      return groupedServices;
+  // Extract available filter options from services
+  const availableRuntimes = useMemo(() => {
+    const runtimeSet = new Set<string>();
+    for (const service of groupedServices) {
+      for (const runtime of service.runtimeFootprint) {
+        runtimeSet.add(runtime);
+      }
     }
+    return Array.from(runtimeSet).sort();
+  }, [groupedServices]);
 
-    interface ScoredService {
-      readonly service: GroupedService;
-      readonly score: number;
+  const availableOwners = useMemo(() => {
+    const ownerSet = new Set<string>();
+    for (const service of groupedServices) {
+      ownerSet.add(service.owner);
     }
+    return Array.from(ownerSet).sort();
+  }, [groupedServices]);
 
-    return groupedServices
-      .map(
-        (service: GroupedService): ScoredService => ({
-          service,
-          score: calculateSearchScore(service, searchQuery),
-        })
-      )
-      .filter((item: ScoredService) => item.score > 0)
-      .sort((a: ScoredService, b: ScoredService) => b.score - a.score)
-      .map((item: ScoredService) => item.service);
-  }, [groupedServices, searchQuery]);
+  // Derive visible services from query state (pure selector, no side effects)
+  const visibleServices = useMemo(
+    () => deriveVisibleServices(groupedServices, queryState),
+    [groupedServices, queryState]
+  );
 
   const hasServices = groupedServices.length > 0;
-  const hasFilteredServices = filteredGroupedServices.length > 0;
+  const hasFilteredServices = visibleServices.length > 0;
 
   // Keyboard shortcut for command palette
   useEffect(() => {
@@ -242,29 +244,6 @@ export default function ServicesPage() {
     );
   }, [groupedServices]);
 
-  // Keyboard shortcut for search focus
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
-        e.preventDefault();
-        const input = searchInputRef.current;
-        if (input) {
-          input.focus();
-        }
-      }
-
-      if (e.key === "Escape" && e.target === searchInputRef.current) {
-        const input = searchInputRef.current;
-        if (input) {
-          input.blur();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   const handleServiceSubmit = useCallback(
     async (data: CreateServiceFormData) => {
       if (!userId || organizationIds.length === 0) {
@@ -312,59 +291,56 @@ export default function ServicesPage() {
   return (
     <ProtectedRoute>
       <DashboardLayout>
-        <div className="space-y-6">
-          {/* PageHeader - Always visible */}
-          <div className="space-y-1">
-            <h1 className="font-bold text-3xl tracking-tight">{PAGE_TITLE}</h1>
-            <p className="text-muted-foreground text-sm">{PAGE_DESCRIPTION}</p>
+        <div className="space-y-4">
+          {/* PageHeader with Actions - Strict hierarchy, 8/16px rhythm */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h1 className="font-bold text-3xl tracking-tight">
+                {PAGE_TITLE}
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {PAGE_DESCRIPTION}
+              </p>
+            </div>
+
+            {/* Actions - Right-aligned, icon-only, consistent hit areas */}
+            <div className="flex items-center gap-2">
+              {/* CSV Export - Tertiary, reduced prominence */}
+              {hasFilteredServices && (
+                <Button
+                  aria-label="Export to CSV"
+                  className="h-[42px] w-10"
+                  onClick={handleExportCsv}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
+
+              {/* Create service - Primary CTA, isolated */}
+              {canCreate && (
+                <Button
+                  aria-label="Create service"
+                  className="h-[42px] w-10"
+                  onClick={handleCreateService}
+                  size="icon"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
-          {/* PageToolbar - Only when services exist */}
+          {/* Query Bar - Search-first with filter tokens, 16px spacing */}
           {hasServices && (
-            <div className="flex h-11 items-center gap-2">
-              {/* Search input - flex-1, full width flexible */}
-              <div className="relative flex-1">
-                <Search
-                  aria-hidden="true"
-                  className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  aria-label="Search services"
-                  className="h-11 pl-9"
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search services…"
-                  ref={searchInputRef}
-                  value={searchQuery}
-                />
-              </div>
-
-              {/* Actions cluster - icon-only buttons */}
-              <div className="flex items-center gap-2">
-                {/* CSV Export button - icon-only, ghost variant */}
-                {hasFilteredServices && (
-                  <Button
-                    aria-label="Export to CSV"
-                    className="h-11 w-11"
-                    onClick={handleExportCsv}
-                    size="icon"
-                    variant="ghost"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                )}
-
-                {/* Create service button - icon-only, primary */}
-                {canCreate && (
-                  <Button
-                    aria-label="Create service"
-                    className="h-11 w-11"
-                    onClick={handleCreateService}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+            <div className="space-y-2">
+              <QueryBar
+                availableOwners={availableOwners}
+                availableRuntimes={availableRuntimes}
+                onQChange={queryState.setQ}
+                queryState={queryState}
+              />
             </div>
           )}
 
@@ -372,32 +348,65 @@ export default function ServicesPage() {
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 5 }, (_, i) => `skeleton-row-${i}`).map(
-                (key) => (
-                  <div
-                    className="flex items-center gap-4 rounded-lg border bg-card p-4"
-                    key={key}
-                  >
-                    <Skeleton className="h-5 w-32" />
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="ml-auto h-8 w-8 rounded-md" />
-                  </div>
-                )
+                (key) => {
+                  return (
+                    <div
+                      className="flex items-center gap-4 rounded border border-border/40 bg-card p-4"
+                      key={key}
+                    >
+                      <Skeleton className="h-5 w-32" />
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="ml-auto h-8 w-8 rounded" />
+                    </div>
+                  );
+                }
               )}
             </div>
           )}
 
-          {!isLoading && hasServices && (
+          {!isLoading && hasServices && hasFilteredServices && (
             <ServiceTable
               onDelete={handleDeleteService}
               onEdit={handleEditService}
-              services={filteredGroupedServices}
+              services={visibleServices}
               showHeader={false}
               yamlContent=""
             />
           )}
 
+          {!isLoading &&
+            hasServices &&
+            !hasFilteredServices &&
+            (queryState.q.trim().length > 0 ||
+              queryState.env.length > 0 ||
+              queryState.runtime.length > 0 ||
+              queryState.owner.length > 0) && (
+              <Empty className="border-border/40">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Package className="size-6" />
+                  </EmptyMedia>
+                  <EmptyTitle>No services match your filters</EmptyTitle>
+                  <EmptyDescription>
+                    Try adjusting your search query or removing filters to see
+                    more results.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button
+                    onClick={() => {
+                      queryState.clearFilters();
+                    }}
+                    variant="outline"
+                  >
+                    Clear filters
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            )}
+
           {!(isLoading || hasServices) && (
-            <Empty className="border-dashed">
+            <Empty className="border-border/40 border-dashed">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <Package className="size-6" />
