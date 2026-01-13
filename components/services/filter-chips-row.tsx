@@ -29,8 +29,14 @@
 
 import { SlidersHorizontal } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PopoverTrigger } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Environment } from "@/hooks/use-services-query-state";
 import {
   generateChipValueDisplay,
@@ -101,6 +107,7 @@ export function FilterChipsRow({
   const [selectedBuilderField, setSelectedBuilderField] =
     useState<FilterFieldType | null>(null);
 
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
   const hasFilters = hasActiveFilters(env, owner, runtime);
 
   /**
@@ -120,11 +127,81 @@ export function FilterChipsRow({
   }, []);
 
   /**
+   * Handles popover open/close changes from PopoverTrigger.
+   * Ensures selected field is reset and focus is restored when closing.
+   */
+  const handleBuilderOpenChange = useCallback(
+    (open: boolean) => {
+      setIsBuilderOpen(open);
+      if (open && selectedBuilderField === null) {
+        // Opening from button (not from chip) - reset field selection
+        setSelectedBuilderField(null);
+      } else if (!open) {
+        // Closing - reset field selection and restore focus
+        setSelectedBuilderField(null);
+        setTimeout(() => {
+          filterButtonRef.current?.focus();
+        }, 50);
+      }
+    },
+    [selectedBuilderField]
+  );
+
+  /**
    * Handles filter button click to open builder.
+   * This ensures the builder opens with no preselected field.
    */
   const handleFilterButtonClick = useCallback(() => {
     openBuilder(null);
   }, [openBuilder]);
+
+  /**
+   * Handles F key press to open/close filter builder.
+   * Only triggers when not typing in an input/textarea.
+   * Toggles builder: opens if closed, closes if open.
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      // Don't trigger if user is typing in an input
+      const target = event.target as HTMLElement;
+      const isInputElement =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
+
+      if (isInputElement) {
+        return;
+      }
+
+      // Trigger on F key (case-insensitive)
+      if (event.key === "f" || event.key === "F") {
+        // Don't trigger if modifier keys are pressed (e.g., Cmd+F for search)
+        if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        // Toggle: close if open, open if closed
+        if (isBuilderOpen) {
+          setIsBuilderOpen(false);
+          setSelectedBuilderField(null);
+          // Restore focus to button
+          setTimeout(() => {
+            filterButtonRef.current?.focus();
+          }, 50);
+        } else {
+          openBuilder(null);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [isBuilderOpen, openBuilder]);
 
   /**
    * Handles chip segment click to open builder on specific field.
@@ -263,13 +340,13 @@ export function FilterChipsRow({
       className={cn("flex items-center gap-2", className)}
       style={{ minHeight: `${FILTER_ROW_HEIGHT_PX}px` }}
     >
-      {/* Filter button (opens builder) */}
+      {/* Filter button (opens builder) with tooltip */}
       <FilterBuilder
         availableOwners={availableOwners}
         availableRuntimes={availableRuntimes}
         isOpen={isBuilderOpen}
         onEnvChange={onEnvChange}
-        onOpenChange={setIsBuilderOpen}
+        onOpenChange={handleBuilderOpenChange}
         onOwnerChange={onOwnerChange}
         onRuntimeChange={onRuntimeChange}
         selectedEnv={env}
@@ -277,16 +354,36 @@ export function FilterChipsRow({
         selectedOwner={owner}
         selectedRuntime={runtime}
         trigger={
-          <Button
-            aria-label="Add filter"
-            className="h-8 gap-1.5"
-            onClick={handleFilterButtonClick}
-            size="sm"
-            variant="outline"
-          >
-            <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
-            <span>Filter</span>
-          </Button>
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button
+                  aria-label="Add filter"
+                  className="h-8 gap-1.5"
+                  onClick={handleFilterButtonClick}
+                  ref={filterButtonRef}
+                  size="sm"
+                  variant="outline"
+                >
+                  <SlidersHorizontal
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                  <span>Filter</span>
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent
+              className="flex items-center gap-1 rounded-md border border-border bg-popover px-2 py-1.5 text-popover-foreground text-xs shadow-sm [&_svg]:hidden"
+              side="bottom"
+              sideOffset={6}
+            >
+              <span>Add filter</span>
+              <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                F
+              </kbd>
+            </TooltipContent>
+          </Tooltip>
         }
       />
 

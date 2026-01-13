@@ -132,7 +132,7 @@ export const HeroHeader = () => {
                     size="sm"
                   >
                     <Link href="/dashboard/services">
-                      <span>Go to Dashboard</span>
+                      <span>Open App</span>
                     </Link>
                   </Button>
                 </SignedIn>
