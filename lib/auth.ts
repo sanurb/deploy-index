@@ -183,6 +183,10 @@ const authOptions = {
     multiSession(),
     nextCookies(),
   ],
+  trustedOrigins: [
+    "https://*.paymentsway.dev",
+    "https://deploy-index.vercel.app",
+  ],
 } satisfies BetterAuthOptions;
 
 export const auth = betterAuth({

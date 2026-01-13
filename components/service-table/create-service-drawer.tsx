@@ -1,7 +1,7 @@
 "use client";
 
 import { Globe, Plus, Settings, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -88,6 +88,8 @@ export function CreateServiceDrawer({
     Record<string, Partial<Record<keyof ServiceInterface, string>>>
   >({});
 
+  const serviceNameInputRef = useRef<HTMLInputElement>(null);
+
   const isEditing = editingService !== null && editingService !== undefined;
 
   const submitButtonText = useMemo(() => {
@@ -130,6 +132,40 @@ export function CreateServiceDrawer({
       setIsSubmitting(false);
     }
   }, [open, editingService]);
+
+  // Focus first field (Service Name) when drawer opens
+  useEffect(() => {
+    if (open) {
+      // Small delay to ensure Sheet is fully rendered
+      const timer = setTimeout(() => {
+        serviceNameInputRef.current?.focus();
+      }, 100);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+  }, [open]);
+
+  // Handle Escape key to close drawer
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isSubmitting) {
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenChange(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [open, isSubmitting, onOpenChange]);
 
   // Validate form
   const isFormValid = useMemo(() => {
@@ -357,6 +393,7 @@ export function CreateServiceDrawer({
                         handleFieldChange("name", e.target.value)
                       }
                       placeholder="my-service"
+                      ref={serviceNameInputRef}
                       value={formData.name}
                     />
                     {errors.name && (

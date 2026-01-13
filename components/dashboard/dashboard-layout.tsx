@@ -4,7 +4,6 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  LayoutDashboard,
   Mail,
   Menu,
   Package,
@@ -25,11 +24,6 @@ import { OrganizationSwitcherWrapper } from "./organization-switcher-wrapper";
 import { SidebarItem } from "./sidebar-item";
 
 const NAVIGATION_ITEMS = [
-  {
-    title: "Home",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
   {
     title: "Services",
     href: "/dashboard/services",
