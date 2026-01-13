@@ -118,16 +118,38 @@ function ToolbarRowContent({
           </Tooltip>
         )}
 
-        {/* Create Service - Responsive: text+icon on desktop, icon-only on mobile */}
+        {/* Create Service - Icon button with tooltip */}
         {canCreate && (
-          <Button
-            aria-label="Create service"
-            className="h-9"
-            onClick={onCreateService}
-          >
-            <Plus className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">New service</span>
-          </Button>
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label="New service"
+                className="h-9"
+                onClick={onCreateService}
+                size="icon"
+                variant="default"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent
+              align="end"
+              avoidCollisions
+              className="flex items-center gap-1 rounded-md border border-border bg-popover px-2 py-1.5 text-popover-foreground text-xs shadow-sm [&_svg]:hidden"
+              side="top"
+              sideOffset={6}
+            >
+              <span>New service</span>
+              <span className="flex items-center gap-0.5">
+                <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                  N
+                </kbd>
+                <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                  S
+                </kbd>
+              </span>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -177,6 +199,7 @@ export default function ServicesPage() {
   const userId = user?.id && typeof user.id === "string" ? user.id : null;
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [createServiceTrigger, setCreateServiceTrigger] = useState(0);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Query user's organizations and memberships to check roles
   const { data: orgData } = db.useQuery(
@@ -297,9 +320,93 @@ export default function ServicesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // N+S chord handler for creating new service
+  useEffect(() => {
+    let chordTimer: NodeJS.Timeout | null = null;
+    let waitingForS = false;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      const target = e.target as HTMLElement;
+      const isInputElement =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
+
+      if (isInputElement) {
+        return;
+      }
+
+      // Don't trigger if modifier keys are pressed
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
+        return;
+      }
+
+      // Disable chord handler if any modal/drawer is open (except the service drawer)
+      if (commandPaletteOpen || (isDrawerOpen && e.key !== "Escape")) {
+        if (chordTimer) {
+          clearTimeout(chordTimer);
+          chordTimer = null;
+        }
+        waitingForS = false;
+        return;
+      }
+
+      // Start chord: N key
+      if ((e.key === "n" || e.key === "N") && !waitingForS) {
+        e.preventDefault();
+        waitingForS = true;
+
+        // Set timeout to clear chord state after ~1000ms
+        chordTimer = setTimeout(() => {
+          waitingForS = false;
+          chordTimer = null;
+        }, 1000);
+      }
+      // Complete chord: S key after N
+      else if ((e.key === "s" || e.key === "S") && waitingForS) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Clear chord state
+        if (chordTimer) {
+          clearTimeout(chordTimer);
+          chordTimer = null;
+        }
+        waitingForS = false;
+
+        // Open drawer
+        if (canCreate) {
+          setCreateServiceTrigger((prev) => prev + 1);
+        }
+      }
+      // Any other key clears the chord
+      else if (waitingForS) {
+        if (chordTimer) {
+          clearTimeout(chordTimer);
+          chordTimer = null;
+        }
+        waitingForS = false;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      if (chordTimer) {
+        clearTimeout(chordTimer);
+      }
+    };
+  }, [canCreate, commandPaletteOpen, isDrawerOpen]);
+
   // Handler to trigger create service from toolbar
   const handleCreateService = useCallback(() => {
     setCreateServiceTrigger((prev) => prev + 1);
+  }, []);
+
+  // Handler to track drawer open state
+  const handleDrawerOpenChange = useCallback((open: boolean) => {
+    setIsDrawerOpen(open);
   }, []);
 
   return (
@@ -350,6 +457,7 @@ export default function ServicesPage() {
                 createServiceTrigger={createServiceTrigger}
                 existingServiceNames={existingServiceNames}
                 groupedServices={groupedServices}
+                onDrawerOpenChange={handleDrawerOpenChange}
                 organizationIds={organizationIds}
                 rawServices={rawServices}
                 userId={userId}

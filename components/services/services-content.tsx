@@ -62,6 +62,7 @@ interface ServicesContentProps {
   readonly availableRuntimes: readonly string[];
   readonly availableOwners: readonly string[];
   readonly createServiceTrigger: number;
+  readonly onDrawerOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -104,6 +105,7 @@ export function ServicesContent({
   availableRuntimes,
   availableOwners,
   createServiceTrigger,
+  onDrawerOpenChange,
 }: ServicesContentProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingService, setEditingService] = useState<GroupedService | null>(
@@ -133,6 +135,9 @@ export function ServicesContent({
 
   const handleCreateService = useCallback(() => {
     if (canCreate) {
+      // Store the currently focused element before opening drawer
+      previousFocusRef.current =
+        (document.activeElement as HTMLElement) || null;
       setEditingService(null);
       setIsDrawerOpen(true);
     }
@@ -217,18 +222,22 @@ export function ServicesContent({
     [userId, organizationIds, editingService, rawServices]
   );
 
-  const handleDrawerOpenChange = useCallback((open: boolean) => {
-    setIsDrawerOpen(open);
-    if (!open) {
-      setEditingService(null);
-      // Restore focus to the previously focused element
-      // Use setTimeout to ensure Sheet has fully closed and DOM has updated
-      setTimeout(() => {
-        restoreFocus(previousFocusRef.current);
-        previousFocusRef.current = null;
-      }, 100);
-    }
-  }, []);
+  const handleDrawerOpenChange = useCallback(
+    (open: boolean) => {
+      setIsDrawerOpen(open);
+      onDrawerOpenChange?.(open);
+      if (!open) {
+        setEditingService(null);
+        // Restore focus to the previously focused element
+        // Use setTimeout to ensure Sheet has fully closed and DOM has updated
+        setTimeout(() => {
+          restoreFocus(previousFocusRef.current);
+          previousFocusRef.current = null;
+        }, 100);
+      }
+    },
+    [onDrawerOpenChange]
+  );
 
   return (
     <>
