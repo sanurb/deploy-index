@@ -186,6 +186,7 @@ const authOptions = {
   trustedOrigins: [
     "https://*.paymentsway.dev",
     "https://deploy-index.vercel.app",
+    "http://localhost:4001",
   ],
 } satisfies BetterAuthOptions;
 

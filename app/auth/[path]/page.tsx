@@ -19,7 +19,7 @@ export default async function AuthPage({
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader />
       <main className="container flex grow flex-col items-center justify-center self-center p-4 md:p-6">
-        <AuthView path={path} redirectTo="/dashboard" />
+        <AuthView path={path} redirectTo="/app" />
       </main>
     </div>
   );

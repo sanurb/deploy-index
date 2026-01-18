@@ -4,7 +4,7 @@ import { useInstantAuth } from "@daveyplate/better-auth-instantdb";
 import { AuthUIProvider } from "@daveyplate/better-auth-ui";
 import { useInstantOptions } from "@daveyplate/better-auth-ui/instantdb";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -13,6 +13,8 @@ import { db } from "@/lib/db";
 
 export function Providers({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { slug } = useParams<{ slug: string }>();
+
   const { data: sessionData, isPending } = authClient.useSession();
 
   useInstantAuth({ db: db as never, sessionData, isPending });
@@ -29,7 +31,6 @@ export function Providers({ children }: { children: ReactNode }) {
     [sessionData, isPending]
   );
 
-  // TODO: Add hooks and mutators where these are stable
   const { hooks, mutators } = useInstantOptions(instantOptions);
 
   // Memoize callbacks to prevent re-renders
@@ -65,7 +66,11 @@ export function Providers({ children }: { children: ReactNode }) {
         mutators={mutators}
         navigate={handleNavigate}
         onSessionChange={handleSessionChange}
-        organization={{}}
+        organization={{
+          basePath: "/organization",
+          pathMode: "slug",
+          slug,
+        }}
         replace={handleReplace}
       >
         {children}

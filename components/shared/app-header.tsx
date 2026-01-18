@@ -1,3 +1,4 @@
+//components/shared/app-header.tsx
 "use client";
 
 import { SignedIn, SignedOut, UserButton } from "@daveyplate/better-auth-ui";

@@ -131,7 +131,7 @@ export const HeroHeader = () => {
                     className={cn(isScrolled && "lg:hidden")}
                     size="sm"
                   >
-                    <Link href="/dashboard/services">
+                    <Link href="/app">
                       <span>Open App</span>
                     </Link>
                   </Button>
