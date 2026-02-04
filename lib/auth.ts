@@ -68,7 +68,7 @@ export const viewer = ac.newRole({
   service: ["read"],
 });
 
-const from = process.env.BETTER_AUTH_EMAIL || "delivered@resend.dev";
+const from = process.env.RESEND_FROM || "delivered@resend.dev";
 const to = process.env.TEST_EMAIL || "";
 
 export const adminDb = init({

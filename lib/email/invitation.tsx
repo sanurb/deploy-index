@@ -33,66 +33,72 @@ export const InviteUserEmail = ({
   teamImage,
   inviteLink,
 }: BetterAuthInviteUserEmailProps) => {
-  const previewText = `Join ${invitedByUsername} on BetterAuth`;
+  const previewText = `${invitedByUsername} invited you to join ${teamName}`;
+
   return (
     <Html>
       <Head />
       <Preview>{previewText}</Preview>
+
       <Tailwind>
-        <Body className="mx-auto my-auto bg-white px-2 font-sans">
-          <Container className="mx-auto my-[40px] max-w-[465px] rounded border border-[#eaeaea] border-solid p-[20px]">
-            <Heading className="mx-0 my-[30px] p-0 text-center font-normal text-[24px] text-black">
-              Join <strong>{invitedByUsername}</strong> on{" "}
-              <strong>Better Auth.</strong>
+        <Body className="mx-auto bg-[#fafafa] font-sans text-[#0f0f0f]">
+          <Container className="mx-auto my-10 max-w-[480px] rounded-xl bg-white px-6 py-8">
+            {/* Header */}
+            <Heading className="mb-2 text-[20px] font-medium text-[#0f0f0f]">
+              You’ve been invited
             </Heading>
-            <Text className="text-[14px] text-black leading-[24px]">
-              Hello there,
+
+            <Text className="mb-6 text-[14px] leading-[22px] text-[#525252]">
+              <strong className="text-[#0f0f0f]">{invitedByUsername}</strong> (
+              {invitedByEmail}) invited you to join{" "}
+              <strong className="text-[#0f0f0f]">{teamName}</strong>.
             </Text>
-            <Text className="text-[14px] text-black leading-[24px]">
-              <strong>{invitedByUsername}</strong> (
-              <Link
-                className="text-blue-600 no-underline"
-                href={`mailto:${invitedByEmail}`}
-              >
-                {invitedByEmail}
-              </Link>
-              ) has invited you to the <strong>{teamName}</strong> team on{" "}
-              <strong>Better Auth</strong>.
-            </Text>
-            <Section>
-              {teamImage ? (
+
+            {/* Team */}
+            {teamImage && (
+              <Section className="mb-6">
                 <Row>
-                  <Column align="left">
+                  <Column>
                     <Img
                       className="rounded-full"
-                      fetchPriority="high"
-                      height="64"
+                      height="40"
                       src={teamImage}
-                      width="64"
+                      width="40"
                     />
                   </Column>
                 </Row>
-              ) : null}
-            </Section>
-            <Section className="mt-[32px] mb-[32px] text-center">
+              </Section>
+            )}
+
+            {/* CTA */}
+            <Section className="mb-6">
               <Button
-                className="rounded bg-[#000000] px-5 py-3 text-center font-semibold text-[12px] text-white no-underline"
+                className="rounded-md bg-[#0f0f0f] px-4 py-2 text-[13px] font-medium text-white no-underline"
                 href={inviteLink}
               >
-                Join the team
+                Join team
               </Button>
             </Section>
-            <Text className="text-[14px] text-black leading-[24px]">
-              or copy and paste this URL into your browser:{" "}
-              <Link className="text-blue-600 no-underline" href={inviteLink}>
+
+            {/* Fallback link */}
+            <Text className="mb-6 text-[13px] leading-[20px] text-[#737373]">
+              Or copy and paste this link into your browser:
+              <br />
+              <Link
+                className="break-all text-[#0f0f0f] underline underline-offset-2"
+                href={inviteLink}
+              >
                 {inviteLink}
               </Link>
             </Text>
-            <Hr className="mx-0 my-[26px] w-full border border-[#eaeaea] border-solid" />
-            <Text className="text-[#666666] text-[12px] leading-[24px]">
-              This invitation was intended for{" "}
-              <span className="text-black">{username}</span>. If you were not
-              expecting this invitation, you can ignore this email.
+
+            <Hr className="my-6 border-[#e5e5e5]" />
+
+            {/* Footer */}
+            <Text className="text-[12px] leading-[18px] text-[#737373]">
+              This invitation was sent to{" "}
+              <span className="text-[#0f0f0f]">{username}</span>. If you weren’t
+              expecting this, you can safely ignore this email.
             </Text>
           </Container>
         </Body>
@@ -102,6 +108,5 @@ export const InviteUserEmail = ({
 };
 
 export function reactInvitationEmail(props: BetterAuthInviteUserEmailProps) {
-  console.log(props);
   return <InviteUserEmail {...props} />;
 }
