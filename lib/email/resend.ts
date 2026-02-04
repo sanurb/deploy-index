@@ -1,3 +1,11 @@
 import { Resend } from "resend";
 
-export const resend = new Resend(process.env.RESEND_API_KEY || "re_123");
+const apiKey = process.env.RESEND_API_KEY;
+
+if (!apiKey || apiKey === "re_123") {
+  console.warn(
+    "[Resend] RESEND_API_KEY is not configured. Email sending will fail."
+  );
+}
+
+export const resend = new Resend(apiKey || "re_123");

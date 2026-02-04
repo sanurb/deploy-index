@@ -96,13 +96,25 @@ export function OrganizationSwitcherWrapper({
   const logo = cleanString(activeOrg?.logo);
   const initials = useMemo(() => getInitials(title), [title]);
 
+  /**
+   * Handle org switch by using canonical resolution.
+   * After any org switch, we refresh the cache and go through /app
+   * which ensures consistent state between session and URL.
+   */
   const handleSetActive = useCallback<OnSetActive>(
     (org: ActiveOrgArg) => {
       // With hidePersonal=true this should not happen, but keep it safe.
       if (!org) return;
 
-      const nextSlug = cleanString((org as { slug?: unknown }).slug);
-      router.replace(nextSlug ? `/organization/${nextSlug}/services` : "/app");
+      // Always use canonical resolution via /app to ensure:
+      // 1. Router cache is refreshed
+      // 2. Session activeOrganizationId is properly set
+      // 3. Consistent navigation after org mutations
+      router.refresh();
+      // Small delay to allow refresh to process before navigation
+      setTimeout(() => {
+        router.replace("/app");
+      }, 100);
     },
     [router]
   );

@@ -87,7 +87,6 @@ function getPageCrumbLabel(pathname: string): string {
     return ROUTE_LABELS[key] ?? humanizeSlug(section);
   }
 
-  // If you ever render this header outside those scopes, be explicit:
   return "Home";
 }
 

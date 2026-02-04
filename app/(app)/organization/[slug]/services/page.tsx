@@ -210,7 +210,11 @@ export default function ServicesPage() {
   const [isEmptyStateDrawerOpen, setIsEmptyStateDrawerOpen] = useState(false);
 
   // Query organization by slug
-  const { data: orgData } = db.useQuery(
+  const {
+    data: orgData,
+    isLoading: isLoadingOrg,
+    error: orgError,
+  } = db.useQuery(
     slug
       ? {
           organizations: {
@@ -229,7 +233,11 @@ export default function ServicesPage() {
       : null;
 
   // Query user's membership to this organization
-  const { data: membershipData } = db.useQuery(
+  const {
+    data: membershipData,
+    isLoading: isLoadingMembership,
+    error: membershipError,
+  } = db.useQuery(
     userId && organizationId
       ? {
           members: {
@@ -257,7 +265,11 @@ export default function ServicesPage() {
   }, [membership]);
 
   // Query services for this organization only
-  const { data: servicesData, isLoading } = db.useQuery(
+  const {
+    data: servicesData,
+    isLoading: isLoadingServices,
+    error: servicesError,
+  } = db.useQuery(
     organizationId
       ? {
           services: {
@@ -272,6 +284,52 @@ export default function ServicesPage() {
         }
       : null
   );
+
+  // Combined loading state:
+  // - If org query is actually loading (not null query), show loading
+  // - If org is found and membership query is loading, show loading
+  // - If org and membership found and services query is loading, show loading
+  const isLoading = useMemo(() => {
+    // If we have a slug but no org data yet, we're loading the org
+    // Note: isLoadingOrg is true for null queries, so we check if slug exists and orgData is undefined
+    if (slug && orgData === undefined) {
+      return true;
+    }
+    // If org is found but membership data is still undefined
+    if (organizationId && userId && membershipData === undefined) {
+      return true;
+    }
+    // If org and membership are found, defer to services loading state
+    if (organizationId && isLoadingServices) {
+      return true;
+    }
+    return false;
+  }, [
+    slug,
+    orgData,
+    organizationId,
+    userId,
+    membershipData,
+    isLoadingServices,
+  ]);
+
+  // Determine if org was genuinely not found (query completed but no results)
+  const orgNotFound = useMemo(() => {
+    // orgData is defined (query completed) but no organizations in result
+    return (
+      orgData !== undefined &&
+      (!orgData.organizations || orgData.organizations.length === 0)
+    );
+  }, [orgData]);
+
+  // Determine if user doesn't have access (org found but no membership)
+  const noAccess = useMemo(() => {
+    // Org exists, membership query completed, but no membership found
+    return organization && membershipData !== undefined && !membership;
+  }, [organization, membershipData, membership]);
+
+  // Check for any query errors
+  const hasError = orgError || membershipError || servicesError;
 
   const rawServices = (servicesData?.services || []) as Array<{
     id: string;
@@ -457,8 +515,30 @@ export default function ServicesPage() {
     [userId, organizationId]
   );
 
-  // If organization not found or user not a member, show error
-  if (!isLoading && (!organization || !membership)) {
+  // Show error state if any query failed
+  if (hasError) {
+    const errorMessage =
+      orgError?.message ||
+      membershipError?.message ||
+      servicesError?.message ||
+      "An error occurred";
+    return (
+      <div className="space-y-4">
+        <Empty className="border-border/40 border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Package className="size-6" />
+            </EmptyMedia>
+            <EmptyTitle>Something went wrong</EmptyTitle>
+            <EmptyDescription>{errorMessage}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
+  // If organization not found (query completed, no results), show error
+  if (orgNotFound) {
     return (
       <div className="space-y-4">
         <Empty className="border-border/40 border-dashed">
@@ -468,8 +548,26 @@ export default function ServicesPage() {
             </EmptyMedia>
             <EmptyTitle>Organization not found</EmptyTitle>
             <EmptyDescription>
-              The organization you're looking for doesn't exist or you don't
-              have access to it.
+              The organization you're looking for doesn't exist.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
+  // If user doesn't have access (org exists but no membership), show error
+  if (noAccess) {
+    return (
+      <div className="space-y-4">
+        <Empty className="border-border/40 border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Package className="size-6" />
+            </EmptyMedia>
+            <EmptyTitle>Access denied</EmptyTitle>
+            <EmptyDescription>
+              You don't have access to this organization.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -12,10 +12,61 @@ import {
   multiSession,
   organization,
 } from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
+import {
+  adminAc,
+  defaultStatements,
+  memberAc,
+  ownerAc,
+} from "better-auth/plugins/organization/access";
+import consola from "consola";
 import schema from "@/instant.schema";
 import { reactInvitationEmail } from "./email/invitation";
 import { resend } from "./email/resend";
 import { reactResetPasswordEmail } from "./email/reset-password";
+
+/**
+ * Access Control Configuration
+ *
+ * Role hierarchy:
+ * - owner: Full access - can delete org, manage all settings, full service access
+ * - admin: Cannot delete org, can manage members/settings, full service access
+ * - member: Basic member - read-only access (Better Auth default)
+ * - editor: Custom role for developers - can create/edit/delete services
+ * - viewer: Custom role - read-only access to services
+ */
+const statement = {
+  ...defaultStatements,
+  // Custom service permissions
+  service: ["create", "update", "delete", "read"],
+} as const;
+
+export const ac = createAccessControl(statement);
+
+// Built-in roles with default permissions
+export const owner = ac.newRole({
+  ...ownerAc.statements,
+  service: ["create", "update", "delete", "read"],
+});
+
+export const adminRole = ac.newRole({
+  ...adminAc.statements,
+  service: ["create", "update", "delete", "read"],
+});
+
+export const member = ac.newRole({
+  ...memberAc.statements,
+  service: ["read"],
+});
+
+// Custom product roles
+export const editor = ac.newRole({
+  service: ["create", "update", "delete", "read"],
+});
+
+export const viewer = ac.newRole({
+  service: ["read"],
+});
 
 const from = process.env.BETTER_AUTH_EMAIL || "delivered@resend.dev";
 const to = process.env.TEST_EMAIL || "";
@@ -150,24 +201,52 @@ const authOptions = {
   plugins: [
     organization({
       async sendInvitationEmail(data) {
-        await resend.emails.send({
-          from,
-          to: data.email,
-          subject: "You've been invited to join an organization",
-          react: reactInvitationEmail({
-            username: data.email,
-            invitedByUsername: data.inviter.user.name,
-            invitedByEmail: data.inviter.user.email,
-            teamName: data.organization.name,
-            inviteLink:
-              process.env.NODE_ENV === "development"
-                ? `http://localhost:3000/accept-invitation/${data.id}`
-                : `${
-                    process.env.BETTER_AUTH_URL ||
-                    "https://demo.better-auth.com"
-                  }/accept-invitation/${data.id}`,
-          }),
-        });
+        try {
+          const inviteLink =
+            process.env.NODE_ENV === "development"
+              ? `http://localhost:3000/accept-invitation/${data.id}`
+              : `${
+                  process.env.BETTER_AUTH_URL || "https://demo.better-auth.com"
+                }/accept-invitation/${data.id}`;
+
+          consola.info("[Invitation Email] Sending invitation:", {
+            to: data.email,
+            organization: data.organization.name,
+            inviteLink,
+          });
+
+          const result = await resend.emails.send({
+            from,
+            to: data.email,
+            subject: "You've been invited to join an organization",
+            react: reactInvitationEmail({
+              username: data.email,
+              invitedByUsername: data.inviter.user.name,
+              invitedByEmail: data.inviter.user.email,
+              teamName: data.organization.name,
+              inviteLink,
+            }),
+          });
+
+          if (result.error) {
+            console.error("[Invitation Email] Resend API error:", result.error);
+            throw new Error(
+              `Failed to send invitation email: ${result.error.message}`
+            );
+          }
+
+          consola.info("[Invitation Email] Email sent successfully:", {
+            emailId: result.data?.id,
+            to: data.email,
+          });
+        } catch (error) {
+          consola.error(
+            "[Invitation Email] Failed to send invitation email:",
+            error
+          );
+          // Re-throw to let better-auth handle the error
+          throw error;
+        }
       },
     }),
     bearer(),
