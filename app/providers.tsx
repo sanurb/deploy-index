@@ -144,6 +144,10 @@ export function Providers({ children }: { children: ReactNode }) {
           basePath: "/organization",
           pathMode: "slug",
           slug,
+          customRoles: [
+            { role: "editor", label: "Editor" },
+            { role: "viewer", label: "Viewer" },
+          ],
         }}
         replace={handleReplace}
       >

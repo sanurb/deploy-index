@@ -1,8 +1,16 @@
 "use client";
 
+import { AuthUIContext } from "@daveyplate/better-auth-ui";
 import { Download, Package, Plus } from "lucide-react";
 import { useParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { CommandPalette } from "@/components/command-palette";
 import {
   CreateServiceDrawer,
@@ -209,13 +217,44 @@ export default function ServicesPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isEmptyStateDrawerOpen, setIsEmptyStateDrawerOpen] = useState(false);
 
-  // Query organization by slug
+  // Resolve organization from Better Auth API list (server-backed). This avoids
+  // client-side InstantDB permission/sync issues after accepting an invitation.
+  const authUIContext = useContext(AuthUIContext);
+  const orgListResult = authUIContext?.hooks?.useListOrganizations?.();
+  const apiOrgList = orgListResult?.data ?? null;
+  const isOrgListLoading = orgListResult?.isPending ?? false;
+
+  // API may return members (with nested organization) or plain organizations; resolve by slug
+  const organizationFromApi = useMemo(() => {
+    if (!slug || !apiOrgList || !Array.isArray(apiOrgList)) return null;
+    for (const item of apiOrgList as Array<
+      | { slug?: string; id?: string; name?: string }
+      | { organization?: { slug?: string; id?: string; name?: string } }
+    >) {
+      const orgSlug =
+        "organization" in item && item.organization?.slug != null
+          ? item.organization.slug
+          : "slug" in item && item.slug != null
+            ? item.slug
+            : null;
+      if (orgSlug != null && String(orgSlug) === String(slug)) {
+        return ("organization" in item ? item.organization : item) as {
+          id: string;
+          name?: string;
+          slug: string;
+        };
+      }
+    }
+    return null;
+  }, [slug, apiOrgList]);
+
+  // Fallback: client-side InstantDB org-by-slug (may be empty due to permissions until sync)
   const {
     data: orgData,
     isLoading: isLoadingOrg,
     error: orgError,
   } = db.useQuery(
-    slug
+    slug && !organizationFromApi
       ? {
           organizations: {
             $: {
@@ -226,13 +265,21 @@ export default function ServicesPage() {
       : null
   );
 
-  const organization = orgData?.organizations?.[0];
+  const orgListFromDb = Array.isArray(orgData?.organizations)
+    ? orgData.organizations
+    : [];
+  const organizationFromDb = orgListFromDb[0] ?? null;
+
+  const organization = organizationFromApi ?? organizationFromDb;
   const organizationId =
     organization?.id && typeof organization.id === "string"
       ? organization.id
       : null;
 
-  // Query user's membership to this organization
+  // Determine if user has access: if org is from API, user has access
+  const hasAccessViaApi = Boolean(organizationFromApi);
+
+  // Query user's membership to determine role (for canCreate permission)
   const {
     data: membershipData,
     isLoading: isLoadingMembership,
@@ -253,18 +300,25 @@ export default function ServicesPage() {
   );
 
   const membership = membershipData?.members?.[0];
+  const memberRole = membership?.role ?? null;
+
   const canCreate = useMemo(() => {
+    // If no membership data, but user has API access, assume they can create (safe default)
+    if (hasAccessViaApi && !membershipData) {
+      return true;
+    }
     if (!membership) {
       return false;
     }
     return (
-      membership.role === "editor" ||
-      membership.role === "admin" ||
-      membership.role === "owner"
+      memberRole === "editor" ||
+      memberRole === "admin" ||
+      memberRole === "owner"
     );
-  }, [membership]);
+  }, [hasAccessViaApi, membershipData, membership, memberRole]);
 
   // Query services for this organization only
+  // IMPORTANT: Must query organization relationship for permissions to work
   const {
     data: servicesData,
     isLoading: isLoadingServices,
@@ -280,53 +334,93 @@ export default function ServicesPage() {
             },
             interfaces: {},
             dependencies: {},
+            organization: {
+              members: {
+                user: {},
+              },
+            },
           },
         }
       : null
   );
 
+  // Debug logging for permission issues
+  useEffect(() => {
+    if (!isLoadingServices && organizationId && userId) {
+      console.log("[Services Debug]", {
+        userId,
+        organizationId,
+        servicesCount: servicesData?.services?.length ?? 0,
+        hasError: !!servicesError,
+        error: servicesError,
+        membership,
+        hasAccessViaApi,
+      });
+    }
+  }, [
+    isLoadingServices,
+    organizationId,
+    userId,
+    servicesData,
+    servicesError,
+    membership,
+    hasAccessViaApi,
+  ]);
+
   // Combined loading state:
-  // - If org query is actually loading (not null query), show loading
-  // - If org is found and membership query is loading, show loading
-  // - If org and membership found and services query is loading, show loading
+  // - Resolving org from API list or from InstantDB
+  // - If org is found, services query loading
   const isLoading = useMemo(() => {
-    // If we have a slug but no org data yet, we're loading the org
-    // Note: isLoadingOrg is true for null queries, so we check if slug exists and orgData is undefined
-    if (slug && orgData === undefined) {
+    if (!slug) return false;
+    // Resolving org from Better Auth API list
+    if (isOrgListLoading && !organizationFromApi) {
       return true;
     }
-    // If org is found but membership data is still undefined
-    if (organizationId && userId && membershipData === undefined) {
+    // Fallback: InstantDB org-by-slug still loading (when we don't have org from API yet)
+    if (!organizationFromApi && orgData === undefined) {
       return true;
     }
-    // If org and membership are found, defer to services loading state
+    // If we have org, just wait for services to load
     if (organizationId && isLoadingServices) {
       return true;
     }
     return false;
   }, [
     slug,
+    isOrgListLoading,
+    organizationFromApi,
     orgData,
     organizationId,
-    userId,
-    membershipData,
     isLoadingServices,
   ]);
 
-  // Determine if org was genuinely not found (query completed but no results)
+  // Org not found: slug in URL but org not in API list and not in InstantDB result
   const orgNotFound = useMemo(() => {
-    // orgData is defined (query completed) but no organizations in result
-    return (
-      orgData !== undefined &&
-      (!orgData.organizations || orgData.organizations.length === 0)
-    );
-  }, [orgData]);
+    if (!slug) return false;
+    if (organization) return false;
+    if (isOrgListLoading) return false;
+    if (organizationFromApi !== null) return false;
+    if (orgData === undefined) return false;
+    return orgListFromDb.length === 0;
+  }, [
+    slug,
+    organization,
+    isOrgListLoading,
+    organizationFromApi,
+    orgData,
+    orgListFromDb.length,
+  ]);
 
-  // Determine if user doesn't have access (org found but no membership)
+  // Determine if user doesn't have access
+  // Only block if: org exists, no API access, and membership query shows no membership
   const noAccess = useMemo(() => {
-    // Org exists, membership query completed, but no membership found
+    // If user has access via API, they have access
+    if (hasAccessViaApi) {
+      return false;
+    }
+    // Otherwise, check membership: org exists, membership query completed, but no membership found
     return organization && membershipData !== undefined && !membership;
-  }, [organization, membershipData, membership]);
+  }, [hasAccessViaApi, organization, membershipData, membership]);
 
   // Check for any query errors
   const hasError = orgError || membershipError || servicesError;
@@ -594,21 +688,28 @@ export default function ServicesPage() {
 
       {/* Content Area with Suspense boundary */}
       {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }, (_, i) => `skeleton-row-${i}`).map(
-            (key) => {
-              return (
-                <div
-                  className="flex items-center gap-4 rounded border border-border/40 bg-card p-4"
-                  key={key}
-                >
-                  <Skeleton className="h-5 w-32" />
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="ml-auto h-8 w-8 rounded" />
-                </div>
-              );
-            }
+        <div className="space-y-4">
+          {slug && (
+            <p className="text-muted-foreground text-center text-sm">
+              Loading workspace…
+            </p>
           )}
+          <div className="space-y-2">
+            {Array.from({ length: 5 }, (_, i) => `skeleton-row-${i}`).map(
+              (key) => {
+                return (
+                  <div
+                    className="flex items-center gap-4 rounded border border-border/40 bg-card p-4"
+                    key={key}
+                  >
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="ml-auto h-8 w-8 rounded" />
+                  </div>
+                );
+              }
+            )}
+          </div>
         </div>
       )}
 

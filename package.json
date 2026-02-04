@@ -6,7 +6,11 @@
     "build": "next build",
     "dev": "next dev -p 4001",
     "start": "next start",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "validate:members": "npx tsx scripts/validate-member-links.ts",
+    "fix:members": "npx tsx scripts/fix-member-links.ts",
+    "debug:members": "npx tsx scripts/debug-members.ts",
+    "test:permissions": "npx tsx scripts/test-client-permissions.ts"
   },
   "dependencies": {
     "@base-ui-components/react": "1.0.0-rc.0",

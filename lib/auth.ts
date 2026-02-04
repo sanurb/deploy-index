@@ -202,12 +202,14 @@ const authOptions = {
     organization({
       async sendInvitationEmail(data) {
         try {
-          const inviteLink =
+          const baseUrl =
             process.env.NODE_ENV === "development"
-              ? `http://localhost:3000/accept-invitation/${data.id}`
-              : `${
-                  process.env.BETTER_AUTH_URL || "https://demo.better-auth.com"
-                }/accept-invitation/${data.id}`;
+              ? "http://localhost:4001"
+              : process.env.BETTER_AUTH_URL || "https://demo.better-auth.com";
+
+          // better-auth-ui expects the invitation ID as a query parameter
+          // Route: /auth/accept-invitation?invitationId=${id}
+          const inviteLink = `${baseUrl}/auth/accept-invitation?invitationId=${data.id}`;
 
           consola.info("[Invitation Email] Sending invitation:", {
             to: data.email,
@@ -247,6 +249,56 @@ const authOptions = {
           // Re-throw to let better-auth handle the error
           throw error;
         }
+      },
+      organizationHooks: {
+        afterAddMember: async ({ member, user, organization }) => {
+          // Fix missing organization link when manually adding members
+          try {
+            if (member.organizationId && member.id) {
+              await adminDb.transact([
+                adminDb.tx.members[member.id].link({
+                  organization: member.organizationId,
+                  user: member.userId,
+                }),
+              ]);
+              consola.success(
+                `[Organization Hook - Add Member] Fixed organization link for ${user.email} in ${organization.name}`
+              );
+            }
+          } catch (error) {
+            consola.warn(
+              `[Organization Hook - Add Member] Could not add link for member ${member.id}:`,
+              error
+            );
+          }
+        },
+        afterAcceptInvitation: async ({
+          invitation,
+          member,
+          user,
+          organization,
+        }) => {
+          // Fix missing organization link when accepting invitations
+          // The Better Auth InstantDB adapter only sets organizationId but not the organization link field
+          try {
+            if (member.organizationId && member.id) {
+              await adminDb.transact([
+                adminDb.tx.members[member.id].link({
+                  organization: member.organizationId,
+                  user: member.userId,
+                }),
+              ]);
+              consola.success(
+                `[Organization Hook - Accept Invitation] Fixed organization link for ${user.email} in ${organization.name}`
+              );
+            }
+          } catch (error) {
+            consola.warn(
+              `[Organization Hook - Accept Invitation] Could not add link for member ${member.id}:`,
+              error
+            );
+          }
+        },
       },
     }),
     bearer(),
