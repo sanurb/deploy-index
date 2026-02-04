@@ -123,7 +123,7 @@ export default function HeroSection() {
                   preset="fade-in-blur"
                   speedSegment={0.3}
                 >
-                  Modern Solutions for Customer Engagement
+                  A single source of truth for deployed software
                 </TextEffect>
                 <TextEffect
                   as="p"
@@ -133,8 +133,7 @@ export default function HeroSection() {
                   preset="fade-in-blur"
                   speedSegment={0.3}
                 >
-                  Highly customizable components for building modern websites
-                  and applications that look and feel the way you mean it.
+                  Know what’s deployed when you need it most.
                 </TextEffect>
 
                 <AnimatedGroup
