@@ -1,7 +1,7 @@
 "use client";
 
 import { SignedIn, SignedOut, UserButton } from "@daveyplate/better-auth-ui";
-import { Building2, Mail, Package, Settings, Users } from "lucide-react";
+import { Building2, Mail, Package, Users } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 
@@ -41,26 +41,132 @@ const NAVIGATION_ITEMS: NavigationItem[] = [
 function UserCluster() {
   const { open } = useSidebar();
 
+  const sharedContentBase = cn(
+    "rounded-md border border-border/60 shadow-md overflow-hidden",
+    "bg-popover text-popover-foreground"
+  );
+
+  const sharedMenuItem = cn(
+    "text-popover-foreground",
+    "focus:bg-accent focus:text-accent-foreground",
+    "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+  );
+
+  const classNamesExpanded = {
+    base: cn("w-full min-w-0"),
+    trigger: {
+      base: cn(
+        // override shadcn Button defaults (bg-primary, text-primary-foreground, etc.)
+        "!bg-transparent !text-sidebar-foreground !shadow-none",
+        "w-full min-w-0 h-fit",
+        "flex items-center gap-2 justify-start",
+        "rounded-md px-2 py-1.5",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "transition-colors",
+        "outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+      ),
+      avatar: {
+        base: cn("shrink-0 size-8 rounded-full ring-1 ring-border/50"),
+        image: cn("object-cover"),
+        fallback: cn("bg-muted text-foreground uppercase"),
+      },
+      user: {
+        base: cn("min-w-0 flex-1 text-left text-sidebar-foreground"),
+        name: cn("truncate text-sm font-semibold leading-tight"),
+        email: cn("truncate text-xs text-sidebar-foreground/70"),
+      },
+      skeleton: cn("w-full bg-sidebar-accent/30"),
+    },
+    content: {
+      base: sharedContentBase,
+      user: {
+        base: cn("text-popover-foreground"),
+        name: cn("text-sm font-semibold"),
+        email: cn("text-xs text-muted-foreground"),
+      },
+      avatar: {
+        base: cn("rounded-full ring-1 ring-border/50"),
+        image: cn("object-cover"),
+        fallback: cn("bg-muted text-foreground uppercase"),
+      },
+      menuItem: sharedMenuItem,
+      separator: cn("bg-border/60"),
+    },
+    skeleton: cn("bg-sidebar-accent/30"),
+  };
+
+  const classNamesCollapsed = {
+    base: cn("w-auto"),
+    trigger: {
+      base: cn(
+        // force perfect circle button, avoid stretching
+        "!bg-transparent !text-sidebar-foreground !shadow-none",
+        "size-10 p-0",
+        "flex items-center justify-center",
+        "rounded-md",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "transition-colors",
+        "outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+      ),
+      avatar: {
+        base: cn("size-6 rounded-full ring-1 ring-border/50"),
+        image: cn("object-cover"),
+        fallback: cn("bg-muted text-foreground uppercase"),
+      },
+      user: {
+        base: cn("sr-only"),
+        name: cn("sr-only"),
+        email: cn("sr-only"),
+      },
+      skeleton: cn("size-10 bg-sidebar-accent/30 rounded-md"),
+    },
+    content: {
+      base: sharedContentBase,
+      user: {
+        base: cn("text-popover-foreground"),
+        name: cn("text-sm font-semibold"),
+        email: cn("text-xs text-muted-foreground"),
+      },
+      avatar: {
+        base: cn("rounded-full ring-1 ring-border/50"),
+        image: cn("object-cover"),
+        fallback: cn("bg-muted text-foreground uppercase"),
+      },
+      menuItem: sharedMenuItem,
+      separator: cn("bg-border/60"),
+    },
+    skeleton: cn("bg-sidebar-accent/30"),
+  };
+
   return (
     <div
       className={cn(
-        "flex items-center",
-        open ? "justify-start px-1" : "justify-center"
+        "w-full flex items-center",
+        open ? "justify-start" : "justify-center"
       )}
     >
       <SignedIn>
-        <UserButton size="icon" />
+        <UserButton
+          classNames={open ? classNamesExpanded : classNamesCollapsed}
+          size={open ? "sm" : "icon"}
+        />
       </SignedIn>
 
       <SignedOut>
-        {open && (
+        {open ? (
           <Link
-            className="text-[13px] text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            className={cn(
+              "w-full min-w-0",
+              "rounded-md px-2 py-1.5",
+              "text-[13px] text-sidebar-foreground/80",
+              "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "transition-colors"
+            )}
             href="/auth/sign-in"
           >
             Sign in
           </Link>
-        )}
+        ) : null}
       </SignedOut>
     </div>
   );
@@ -69,15 +175,12 @@ function UserCluster() {
 /* ---------------- Navigation ---------------- */
 
 function WorkspaceNav() {
-  const params = useParams<{ slug?: string }>();
-  const slug = params.slug;
+  const params = useParams();
+  const slug = params?.slug;
   const pathname = usePathname();
   const { open } = useSidebar();
 
-  // Only render navigation if we're in an organization context
-  if (!slug) {
-    return null;
-  }
+  if (!slug) return null;
 
   return (
     <SidebarGroup>
@@ -109,12 +212,11 @@ function WorkspaceNav() {
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center",
-                    open ? "w-full" : "w-9 justify-center"
+                    open ? "w-full min-w-0" : "w-9 justify-center"
                   )}
                   href={href}
                 >
                   <Icon className="size-4 shrink-0" />
-
                   {open && (
                     <span className="ml-2 truncate text-[13px]">{title}</span>
                   )}
@@ -131,14 +233,11 @@ function WorkspaceNav() {
 /* ---------------- Footer (ORG) ---------------- */
 
 function FooterCluster() {
-  const params = useParams<{ slug?: string }>();
-  const slug = params.slug;
+  const params = useParams();
+  const slug = params?.slug;
   const { open } = useSidebar();
 
-  // Only show organization switcher in organization context
-  if (!slug) {
-    return null;
-  }
+  if (!slug) return null;
 
   return (
     <div className={cn(open ? "px-1" : "flex justify-center")}>
