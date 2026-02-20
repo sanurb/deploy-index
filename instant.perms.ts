@@ -36,7 +36,7 @@ const rules = {
       "isServiceMember",
       "auth.id != null && auth.id in data.ref('service.organization.members.user.id')",
       "hasEditorRole",
-      "isServiceMember && ('editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
+      "isServiceMember && ('member' in auth.ref('$user.members.role') || 'editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
     ],
     allow: {
       view: "isServiceMember",
@@ -50,7 +50,7 @@ const rules = {
       "isOrgMember",
       "auth.id != null && auth.id in data.ref('organization.members.user.id')",
       "hasEditorRole",
-      "isOrgMember && ('editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
+      "isOrgMember && ('member' in auth.ref('$user.members.role') || 'editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
       "hasAdminRole",
       "isOrgMember && ('admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
     ],
@@ -100,7 +100,7 @@ const rules = {
       "isServiceMember",
       "auth.id != null && auth.id in data.ref('service.organization.members.user.id')",
       "hasEditorRole",
-      "isServiceMember && ('editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
+      "isServiceMember && ('member' in auth.ref('$user.members.role') || 'editor' in auth.ref('$user.members.role') || 'admin' in auth.ref('$user.members.role') || 'owner' in auth.ref('$user.members.role'))",
     ],
     allow: {
       view: "isServiceMember",

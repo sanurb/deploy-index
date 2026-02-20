@@ -311,6 +311,7 @@ export default function ServicesPage() {
       return false;
     }
     return (
+      memberRole === "member" ||
       memberRole === "editor" ||
       memberRole === "admin" ||
       memberRole === "owner"

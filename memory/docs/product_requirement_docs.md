@@ -1,30 +1,26 @@
-# **Product Requirements Document (PRD)**
+# Product Requirements Document (PRD)
 
-## **Deployed Software Inventory Platform**
+## Deployed Software Inventory Platform
 
-**Version:** 1.1
-**Date:** 2026
-**Status:** Approved for Implementation
-**Product Type:** Internal Tool
-**Audience:** Engineering, DevOps, Security, Product, Operations, Leadership
-
----
+Version: 1.1
+Date: 2026
+Product Type: Internal Tool
+Audience: Engineering, DevOps, Security, Product, Operations, Leadership
 
 ## 1. Introduction
 
 ### 1.1 Purpose of the Document
 
-This document defines the **product requirements** for an internal platform whose purpose is to **centralize, standardize, and govern information about all software deployed within the organization’s infrastructure**.
+This document defines the product requirements for an internal platform whose purpose is to centralize, standardize, and govern information about all software deployed within the organization’s infrastructure.
 
 It serves as:
 
-* A single source of truth for **business scope and functional expectations**
+* A single source of truth for business scope and functional expectations
 * A foundation for backlog creation, QA validation, and acceptance testing
 * A shared alignment artifact for technical and non-technical stakeholders
 
-This document **does not prescribe technical implementation details**. It defines *what the system must do and why*, from a business and operational perspective.
+This document does not prescribe technical implementation details. It defines *what the system must do and why*, from a business and operational perspective.
 
----
 
 ### 1.2 Business Context and Problem Statement
 
@@ -41,25 +37,24 @@ This results in:
 * High operational risk during incidents, audits, and changes
 * Significant friction when onboarding new teams or developers
 
-An MVP based on **YAML editing and visualization** was created to consolidate this information. While effective for DevOps users, it introduced new problems:
+An MVP based on YAML editing and visualization was created to consolidate this information. While effective for DevOps users, it introduced new problems:
 
 * YAML is a barrier for non-DevOps contributors
 * Manual editing increases the risk of structural and semantic errors
 * Long-term maintainability and governance are not sustainable
 
-The business requires a **form-based, authenticated, governed platform** that replaces Excel and YAML entirely.
+The business requires a form-based, authenticated, governed platform that replaces Excel and YAML entirely.
 
----
 
 ### 1.3 Product Goals and Success Criteria
 
 #### Primary Goals
 
-1. Establish a **Single Source of Truth (SSOT)** for all deployed software
-2. Enable **multi-team ownership and contribution** (DevOps + Developers)
-3. Improve **operational visibility** across environments and domains
-4. Enforce **data consistency and validation**
-5. Provide **easy consumption and sharing** via Excel export
+1. Establish a Single Source of Truth (SSOT) for all deployed software
+2. Enable multi-team ownership and contribution (DevOps + Developers)
+3. Improve operational visibility across environments and domains
+4. Enforce data consistency and validation
+5. Provide easy consumption and sharing via Excel export
 
 #### Success Metrics (KPIs)
 
@@ -69,7 +64,6 @@ The business requires a **form-based, authenticated, governed platform** that re
 * Reduction of duplicated or conflicting records to zero
 * Monthly active usage by at least 80% of engineering teams
 
----
 
 ## 2. Project Scope
 
@@ -95,17 +89,16 @@ The business requires a **form-based, authenticated, governed platform** that re
 * Runtime monitoring or health checks
 * Dependency graph visualization
 
----
 
 ## 3. System Overview
 
 ### 3.1 Definition of “Software”
 
-For the purposes of this platform, **software** is defined as:
+For the purposes of this platform, software is defined as:
 
 > Any application, service, frontend, backend, job, mini-app, or system component deployed within the organization’s infrastructure.
 
-This explicitly **includes but is not limited to APIs**.
+This explicitly includes but is not limited to APIs.
 
 Examples:
 
@@ -116,20 +109,18 @@ Examples:
 * Internal tools
 * Supporting services with exposed domains
 
----
 
 ### 3.2 Core Capabilities
 
 The system must allow the organization to:
 
-* Know **what software exists**
-* Know **where it is deployed** (domains, environments)
-* Know **who owns it**
-* Know **what it depends on**
-* Know **how to access it**
+* Know what software exists
+* Know where it is deployed (domains, environments)
+* Know who owns it
+* Know what it depends on
+* Know how to access it
 * Share this information easily with internal stakeholders
 
----
 
 ## 4. User Access and Permissions Model
 
@@ -138,15 +129,15 @@ The system must allow the organization to:
 #### Auto-Registration
 
 * Any user can create an account via self-registration.
-* Upon registration, a **personal organization is automatically created** for the user.
+* Upon registration, a personal organization is automatically created for the user.
 * The organization name defaults to the user's registered name (or email if name is not provided).
-* The registering user is automatically assigned the **Owner** role in their personal organization.
+* The registering user is automatically assigned the Owner role in their personal organization.
 * Users can immediately access and manage software within their personal organization.
 
 #### Personal Organizations
 
 * Each user has their own personal organization created automatically on signup.
-* Users are the **Owner** of their personal organization and have full control.
+* Users are the Owner of their personal organization and have full control.
 * Users can invite additional members to their personal organization.
 * Users can create additional organizations if needed.
 * Users can switch between organizations they belong to.
@@ -161,11 +152,10 @@ The system must allow the organization to:
   * Controlled access through organization membership
   * Clear ownership and accountability
 
----
 
 ### 4.2 Roles and Permissions (Product Decision)
 
-The following roles are defined to balance **simplicity, safety, and collaboration**:
+The following roles are defined to balance simplicity, safety, and collaboration:
 
 #### Viewer
 
@@ -186,16 +176,15 @@ The following roles are defined to balance **simplicity, safety, and collaborati
 * Can invite and manage users
 * Intended for platform owners or designated leads
 
-**Rationale:**
+Rationale:
 Deletion is irreversible and high-impact; restricting it prevents accidental data loss while keeping contribution friction low.
 
----
 
 ## 5. Functional Requirements
 
 ### 5.1 Software Management
 
-Each **Software** record must contain:
+Each Software record must contain:
 
 | Field        | Required | Description                   |
 | ------------ | -------- | ----------------------------- |
@@ -212,11 +201,10 @@ Each **Software** record must contain:
 * Dependencies must not contain duplicates
 * Software can exist without interfaces (e.g., internal jobs)
 
----
 
 ### 5.2 Deployment Interfaces
 
-An **Interface** represents a **deployment access point**, not an API contract.
+An Interface represents a deployment access point, not an API contract.
 
 | Field        | Required                   | Notes                              |
 | ------------ | -------------------------- | ---------------------------------- |
@@ -232,21 +220,19 @@ An **Interface** represents a **deployment access point**, not an API contract.
 * Environment values are restricted to a controlled set
 * Runtime is optional, recognizing incomplete infrastructure visibility
 
----
 
 ### 5.3 Dependency Declaration
 
-* Dependencies are **logical declarations**, not enforced relationships
+* Dependencies are logical declarations, not enforced relationships
 * Stored as strings (e.g., “Upstash Redis”)
 * Used for impact analysis and operational awareness
 
----
 
 ## 6. Inventory View (Table)
 
 ### 6.1 Table Requirements
 
-The primary interface of the system is a **tabular inventory view**, optimized for scanning and comparison.
+The primary interface of the system is a tabular inventory view, optimized for scanning and comparison.
 
 Minimum columns:
 
@@ -258,7 +244,6 @@ Minimum columns:
 * Dependency Count
 * Actions (based on role)
 
----
 
 ### 6.2 Search, Filter, and Sort
 
@@ -268,17 +253,16 @@ Users must be able to:
 * Filter by environment and runtime type
 * Sort by name and owner
 
----
 
 ## 7. Excel Export (Product Decision)
 
 ### 7.1 Export Strategy
 
-**Normalized, analysis-friendly format** is chosen.
+Normalized, analysis-friendly format is chosen.
 
 #### Export Structure
 
-* **One row per interface**
+* One row per interface
 * Software fields repeated per row
 * Dependencies exported as a semicolon-separated list
 
@@ -292,7 +276,6 @@ If a software has no interfaces:
 
 * It is exported as a single row with empty interface fields
 
----
 
 ## 8. Non-Functional Requirements
 
@@ -312,7 +295,6 @@ If a software has no interfaces:
 * Validation rules centrally defined
 * Controlled vocabularies enforced consistently
 
----
 
 ## 9. Security Requirements
 
@@ -322,7 +304,6 @@ If a software has no interfaces:
 * Actions restricted according to permission level
 * Users can only access data within organizations they belong to
 
----
 
 ## 10. Risks and Mitigation
 
@@ -333,7 +314,6 @@ If a software has no interfaces:
 | Accidental deletion | Restrict delete to Admin role                    |
 | Data inconsistency  | Strong validation and controlled vocabularies    |
 
----
 
 ## 11. Future Considerations (Out of Scope)
 
@@ -343,7 +323,6 @@ If a software has no interfaces:
 * Automated discovery
 * Historical versioning and audit trails
 
----
 
 ## 12. Glossary
 

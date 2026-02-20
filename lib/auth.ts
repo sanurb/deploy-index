@@ -31,7 +31,7 @@ import { reactResetPasswordEmail } from "./email/reset-password";
  * Role hierarchy:
  * - owner: Full access - can delete org, manage all settings, full service access
  * - admin: Cannot delete org, can manage members/settings, full service access
- * - member: Basic member - read-only access (Better Auth default)
+ * - member: Can create and edit services, but not delete org
  * - editor: Custom role for developers - can create/edit/delete services
  * - viewer: Custom role - read-only access to services
  */
@@ -56,7 +56,7 @@ export const adminRole = ac.newRole({
 
 export const member = ac.newRole({
   ...memberAc.statements,
-  service: ["read"],
+  service: ["create", "update", "read"],
 });
 
 // Custom product roles
