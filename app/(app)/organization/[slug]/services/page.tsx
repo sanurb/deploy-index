@@ -303,9 +303,9 @@ export default function ServicesPage() {
   const memberRole = membership?.role ?? null;
 
   const canCreate = useMemo(() => {
-    // If no membership data, but user has API access, assume they can create (safe default)
-    if (hasAccessViaApi && !membershipData) {
-      return true;
+    // While membership is loading, disable creation to avoid permission errors
+    if (!membershipData) {
+      return false;
     }
     if (!membership) {
       return false;
@@ -315,7 +315,7 @@ export default function ServicesPage() {
       memberRole === "admin" ||
       memberRole === "owner"
     );
-  }, [hasAccessViaApi, membershipData, membership, memberRole]);
+  }, [membershipData, membership, memberRole]);
 
   // Query services for this organization only
   // IMPORTANT: Must query organization relationship for permissions to work
