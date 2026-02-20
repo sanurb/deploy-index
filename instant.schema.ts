@@ -82,6 +82,8 @@ const _schema = i.schema({
     services: i.entity({
       createdAt: i.date(),
       createdById: i.string().indexed(),
+      description: i.string().optional(),
+      language: i.string().indexed().optional(),
       name: i.string().indexed(),
       organizationId: i.string().indexed(),
       owner: i.string().indexed(),

@@ -16,6 +16,8 @@ export interface GroupedService {
   readonly id: string;
   readonly serviceIndex: number;
   readonly name: string;
+  readonly description?: string | null;
+  readonly languages?: readonly string[];
   readonly owner: string;
   readonly repository: string;
   readonly dependencies: readonly string[];
@@ -62,6 +64,8 @@ export interface ServiceDependency {
  */
 export interface CreateServiceFormData {
   readonly name: string;
+  readonly description: string;
+  readonly languages: readonly string[];
   readonly owner: string;
   readonly repository: string;
   readonly interfaces: readonly ServiceInterface[];

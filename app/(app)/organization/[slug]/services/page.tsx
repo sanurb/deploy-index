@@ -429,6 +429,8 @@ export default function ServicesPage() {
   const rawServices = (servicesData?.services || []) as Array<{
     id: string;
     name: string;
+    description?: string | null;
+    language?: string | null; // Stored as comma-separated string
     owner: string;
     repository: string;
     organizationId: string;

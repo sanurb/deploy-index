@@ -1,7 +1,26 @@
 "use client";
 
-import { Globe, Plus, Settings, Trash2, X } from "lucide-react";
+import {
+  CheckIcon,
+  Code,
+  Globe,
+  Plus,
+  Settings,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Tags,
+  TagsContent,
+  TagsEmpty,
+  TagsGroup,
+  TagsInput,
+  TagsItem,
+  TagsList,
+  TagsTrigger,
+  TagsValue,
+} from "@/components/kibo-ui/tags";
 import {
   Accordion,
   AccordionContent,
@@ -26,6 +45,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   CreateServiceFormData,
   GroupedService,
@@ -53,6 +73,28 @@ const RUNTIME_TYPE_OPTIONS = [
   { value: "paas", label: "PaaS" },
 ] as const;
 
+const LANGUAGE_OPTIONS = [
+  { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "ruby", label: "Ruby" },
+  { value: "php", label: "PHP" },
+  { value: "csharp", label: "C#" },
+  { value: "cpp", label: "C++" },
+  { value: "c", label: "C" },
+  { value: "swift", label: "Swift" },
+  { value: "kotlin", label: "Kotlin" },
+  { value: "scala", label: "Scala" },
+  { value: "elixir", label: "Elixir" },
+  { value: "erlang", label: "Erlang" },
+  { value: "clojure", label: "Clojure" },
+  { value: "haskell", label: "Haskell" },
+  { value: "other", label: "Other" },
+] as const;
+
 // Re-export types for convenience
 export type { CreateServiceFormData, ServiceInterface, ServiceDependency };
 
@@ -75,11 +117,14 @@ export function CreateServiceDrawer({
 }: CreateServiceDrawerProps) {
   const [formData, setFormData] = useState<CreateServiceFormData>({
     name: "",
+    description: "",
+    languages: [],
     owner: "",
     repository: "",
     interfaces: [],
     dependencies: [],
   });
+  const [languageSearch, setLanguageSearch] = useState("");
   const [errors, setErrors] = useState<
     Partial<Record<keyof CreateServiceFormData, string>>
   >({});
@@ -104,6 +149,8 @@ export function CreateServiceDrawer({
     if (open && editingService) {
       setFormData({
         name: editingService.name,
+        description: editingService.description ?? "",
+        languages: editingService.languages ?? [],
         owner: editingService.owner,
         repository: editingService.repository,
         interfaces: editingService.environments.map((env, idx) => ({
@@ -122,6 +169,8 @@ export function CreateServiceDrawer({
     } else if (!open) {
       setFormData({
         name: "",
+        description: "",
+        languages: [],
         owner: "",
         repository: "",
         interfaces: [],
@@ -130,6 +179,7 @@ export function CreateServiceDrawer({
       setErrors({});
       setInterfaceErrors({});
       setIsSubmitting(false);
+      setLanguageSearch("");
     }
   }, [open, editingService]);
 
@@ -224,6 +274,27 @@ export function CreateServiceDrawer({
         owner: value.trim() ? undefined : "Owner is required",
       }));
     }
+  };
+
+  const handleLanguageSelect = (value: string) => {
+    if (formData.languages.includes(value)) {
+      setFormData((prev) => ({
+        ...prev,
+        languages: prev.languages.filter((l) => l !== value),
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        languages: [...prev.languages, value],
+      }));
+    }
+  };
+
+  const handleLanguageRemove = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      languages: prev.languages.filter((l) => l !== value),
+    }));
   };
 
   const handleAddInterface = () => {
@@ -328,6 +399,8 @@ export function CreateServiceDrawer({
       await onSubmit({
         ...formData,
         name: formData.name.trim(),
+        description: formData.description.trim(),
+        languages: formData.languages,
         owner: formData.owner.trim(),
         repository: formData.repository.trim(),
         dependencies: validDependencies.map((name) => ({
@@ -371,7 +444,7 @@ export function CreateServiceDrawer({
           >
             {/* General Section */}
             <AccordionItem
-              className="overflow-hidden border bg-background px-4 first:rounded-t-lg last:rounded-b-lg last:border-b"
+              className="relative z-10 overflow-visible border bg-background px-4 first:rounded-t-lg last:rounded-b-lg last:border-b"
               value="general"
             >
               <AccordionTrigger className="group">
@@ -399,6 +472,104 @@ export function CreateServiceDrawer({
                     {errors.name && (
                       <p className="text-destructive text-xs">{errors.name}</p>
                     )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="service-description">Description</Label>
+                    <Textarea
+                      aria-invalid={errors.description ? "true" : "false"}
+                      id="service-description"
+                      onChange={(e) =>
+                        handleFieldChange("description", e.target.value)
+                      }
+                      placeholder="Brief description of what this service does..."
+                      rows={3}
+                      value={formData.description}
+                    />
+                    {errors.description && (
+                      <p className="text-destructive text-xs">
+                        {errors.description}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground text-xs">
+                      Optional. Help others understand the purpose of this
+                      service.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="service-languages">
+                      <div className="flex items-center gap-2">
+                        <Code className="size-3" />
+                        Languages
+                      </div>
+                    </Label>
+                    <Tags className="w-full">
+                      <TagsTrigger id="service-languages">
+                        {formData.languages.map((lang) => (
+                          <TagsValue
+                            key={lang}
+                            onRemove={() => handleLanguageRemove(lang)}
+                          >
+                            {LANGUAGE_OPTIONS.find((opt) => opt.value === lang)
+                              ?.label ?? lang}
+                          </TagsValue>
+                        ))}
+                      </TagsTrigger>
+                      <TagsContent className="z-[70]">
+                        <TagsInput
+                          onValueChange={setLanguageSearch}
+                          placeholder="Search languages..."
+                          value={languageSearch}
+                        />
+                        <TagsList>
+                          <TagsEmpty>No languages found.</TagsEmpty>
+                          <TagsGroup>
+                            {LANGUAGE_OPTIONS.filter((opt) => {
+                              const matchesSearch =
+                                !languageSearch ||
+                                opt.label
+                                  .toLowerCase()
+                                  .includes(languageSearch.toLowerCase()) ||
+                                opt.value
+                                  .toLowerCase()
+                                  .includes(languageSearch.toLowerCase());
+                              return matchesSearch;
+                            }).map((opt) => {
+                              const isSelected = formData.languages.includes(
+                                opt.value
+                              );
+                              return (
+                                <TagsItem
+                                  key={opt.value}
+                                  onSelect={() =>
+                                    handleLanguageSelect(opt.value)
+                                  }
+                                  value={opt.value}
+                                >
+                                  {opt.label}
+                                  {isSelected && (
+                                    <CheckIcon
+                                      className="text-muted-foreground"
+                                      size={14}
+                                    />
+                                  )}
+                                </TagsItem>
+                              );
+                            })}
+                          </TagsGroup>
+                        </TagsList>
+                      </TagsContent>
+                    </Tags>
+                    {errors.languages && (
+                      <p className="text-destructive text-xs">
+                        {errors.languages}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground text-xs">
+                      Optional. Programming languages used in this service.
+                      Select multiple if applicable.
+                    </p>
                   </div>
 
                   <div className="space-y-2">

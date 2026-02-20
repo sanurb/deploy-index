@@ -146,6 +146,8 @@ export function convertServicesToGrouped(
   services: Array<{
     readonly id: string;
     readonly name: string;
+    readonly description?: string | null;
+    readonly language?: string | null;
     readonly owner: string;
     readonly repository: string;
     readonly interfaces?: Array<{
@@ -189,10 +191,21 @@ export function convertServicesToGrouped(
 
     const sortedEnvs = sortEnvironments(environments);
 
+    // Parse languages from comma-separated string to array
+    const languages =
+      service.language && service.language.trim()
+        ? service.language
+            .split(",")
+            .map((lang) => lang.trim())
+            .filter(Boolean)
+        : [];
+
     return {
       id: service.id,
       serviceIndex,
       name: service.name,
+      description: service.description ?? null,
+      languages: languages.length > 0 ? languages : undefined,
       owner: service.owner,
       repository: service.repository,
       dependencies: service.dependencies?.map((d) => d.dependencyName) ?? [],

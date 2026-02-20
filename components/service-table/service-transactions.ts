@@ -28,6 +28,8 @@ export function createUpdateServiceTransactions(
   // Update service
   const serviceTx = dbInstance.tx.services[serviceId].update({
     name: data.name,
+    description: data.description.trim() || null,
+    language: data.languages.length > 0 ? data.languages.join(",") : null,
     owner: data.owner,
     repository: data.repository,
     updatedAt: new Date(),
@@ -98,6 +100,8 @@ export function createNewServiceTransactions(
   const serviceTx = dbInstance.tx.services[serviceId]
     .create({
       name: data.name,
+      description: data.description.trim() || null,
+      language: data.languages.length > 0 ? data.languages.join(",") : null,
       owner: data.owner,
       repository: data.repository,
       organizationId,
