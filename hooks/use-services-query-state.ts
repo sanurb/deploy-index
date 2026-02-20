@@ -54,7 +54,7 @@ export interface ServicesQueryState {
  * Helper functions for manipulating query state.
  * All mutations happen through these controlled interfaces.
  */
-interface ServicesQueryStateHelpers {
+export interface ServicesQueryStateHelpers {
   readonly setQ: (query: string) => void;
   readonly setEnv: (environments: readonly Environment[]) => void;
   readonly toggleEnv: (env: Environment) => void;

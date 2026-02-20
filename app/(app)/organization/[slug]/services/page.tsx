@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { CommandPalette } from "@/components/command-palette";
@@ -73,6 +74,14 @@ function ServicesContentFallback() {
 }
 
 /**
+ * Ref handle for exposing query state callbacks to parent.
+ */
+interface QueryStateBridge {
+  setQ: (query: string) => void;
+  setOwner: (owners: readonly string[]) => void;
+}
+
+/**
  * Toolbar row component with search and actions.
  * Rendered in Suspense boundary to access query state.
  */
@@ -80,12 +89,25 @@ function ToolbarRowContent({
   canCreate,
   groupedServices,
   onCreateService,
+  queryStateBridgeRef,
 }: {
   readonly canCreate: boolean;
   readonly groupedServices: readonly GroupedService[];
   readonly onCreateService: () => void;
+  readonly queryStateBridgeRef: React.RefObject<QueryStateBridge | null>;
 }) {
   const queryState = useServicesQueryState();
+
+  // Expose query state setters to parent via ref
+  useEffect(() => {
+    queryStateBridgeRef.current = {
+      setQ: queryState.setQ,
+      setOwner: queryState.setOwner,
+    };
+    return () => {
+      queryStateBridgeRef.current = null;
+    };
+  }, [queryState.setQ, queryState.setOwner, queryStateBridgeRef]);
 
   const hasFilteredServices = useMemo(() => {
     const hasQuery = queryState.q.trim().length > 0;
@@ -176,10 +198,12 @@ function ToolbarRow({
   canCreate,
   groupedServices,
   onCreateService,
+  queryStateBridgeRef,
 }: {
   readonly canCreate: boolean;
   readonly groupedServices: readonly GroupedService[];
   readonly onCreateService: () => void;
+  readonly queryStateBridgeRef: React.RefObject<QueryStateBridge | null>;
 }) {
   return (
     <Suspense fallback={<ToolbarRowSkeleton />}>
@@ -187,6 +211,7 @@ function ToolbarRow({
         canCreate={canCreate}
         groupedServices={groupedServices}
         onCreateService={onCreateService}
+        queryStateBridgeRef={queryStateBridgeRef}
       />
     </Suspense>
   );
@@ -216,6 +241,7 @@ export default function ServicesPage() {
   const [createServiceTrigger, setCreateServiceTrigger] = useState(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isEmptyStateDrawerOpen, setIsEmptyStateDrawerOpen] = useState(false);
+  const queryStateBridgeRef = useRef<QueryStateBridge | null>(null);
 
   // Resolve organization from Better Auth API list (server-backed). This avoids
   // client-side InstantDB permission/sync issues after accepting an invitation.
@@ -249,11 +275,7 @@ export default function ServicesPage() {
   }, [slug, apiOrgList]);
 
   // Fallback: client-side InstantDB org-by-slug (may be empty due to permissions until sync)
-  const {
-    data: orgData,
-    isLoading: isLoadingOrg,
-    error: orgError,
-  } = db.useQuery(
+  const { data: orgData, error: orgError } = db.useQuery(
     slug && !organizationFromApi
       ? {
           organizations: {
@@ -344,29 +366,6 @@ export default function ServicesPage() {
         }
       : null
   );
-
-  // Debug logging for permission issues
-  useEffect(() => {
-    if (!isLoadingServices && organizationId && userId) {
-      console.log("[Services Debug]", {
-        userId,
-        organizationId,
-        servicesCount: servicesData?.services?.length ?? 0,
-        hasError: !!servicesError,
-        error: servicesError,
-        membership,
-        hasAccessViaApi,
-      });
-    }
-  }, [
-    isLoadingServices,
-    organizationId,
-    userId,
-    servicesData,
-    servicesError,
-    membership,
-    hasAccessViaApi,
-  ]);
 
   // Combined loading state:
   // - Resolving org from API list or from InstantDB
@@ -686,6 +685,7 @@ export default function ServicesPage() {
           canCreate={canCreate}
           groupedServices={groupedServices}
           onCreateService={handleCreateService}
+          queryStateBridgeRef={queryStateBridgeRef}
         />
       )}
 
@@ -770,12 +770,24 @@ export default function ServicesPage() {
       )}
 
       <CommandPalette
+        canCreate={canCreate}
+        groupedServices={groupedServices}
+        onCreateService={handleCreateService}
         onOpenChange={setCommandPaletteOpen}
-        onSearch={(query) => {
-          // Search handled by ServiceTable internally
-          console.log("Search:", query);
+        onSetOwner={(owners) => {
+          queryStateBridgeRef.current?.setOwner(owners);
+        }}
+        onSetQuery={(query) => {
+          queryStateBridgeRef.current?.setQ(query);
         }}
         open={commandPaletteOpen}
+        services={rawServices.map((s) => ({
+          id: s.id,
+          name: s.name,
+          owner: s.owner,
+          interfaces: s.interfaces?.map((i) => ({ domain: i.domain })),
+        }))}
+        slug={slug}
       />
     </div>
   );

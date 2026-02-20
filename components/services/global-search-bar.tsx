@@ -8,7 +8,6 @@
  * - Render 40px height search input with icon
  * - Debounce input changes
  * - Sync to URL q parameter
- * - Handle Cmd/Ctrl+K focus
  * - Handle Esc to clear/blur
  *
  * Critical constraints (matching Linear):
@@ -47,26 +46,11 @@ const SEARCH_BAR_HEIGHT_PX = 36;
  */
 const SEARCH_BAR_RADIUS_PX = 10;
 
-/**
- * Keyboard shortcut keys for focusing the search input.
- */
-const FOCUS_SHORTCUT_KEYS = ["k", "K"];
-
 interface GlobalSearchBarProps {
   readonly value: string;
   readonly onChange: (query: string) => void;
   readonly className?: string;
   readonly placeholder?: string;
-}
-
-/**
- * Checks if the Cmd (Mac) or Ctrl (Windows/Linux) key is pressed.
- *
- * @param event - Keyboard event
- * @returns True if command/control modifier is active
- */
-function isCommandOrControlPressed(event: KeyboardEvent): boolean {
-  return event.metaKey || event.ctrlKey;
 }
 
 /**
@@ -125,28 +109,6 @@ export function GlobalSearchBar({
     },
     [localValue, onChange]
   );
-
-  /**
-   * Global keyboard shortcut: Cmd/Ctrl+K focuses the search input.
-   */
-  useEffect(() => {
-    const handleGlobalKeyDown = (event: KeyboardEvent): void => {
-      const isFocusShortcut =
-        isCommandOrControlPressed(event) &&
-        FOCUS_SHORTCUT_KEYS.includes(event.key);
-
-      if (isFocusShortcut) {
-        event.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("keydown", handleGlobalKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleGlobalKeyDown);
-    };
-  }, []);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
