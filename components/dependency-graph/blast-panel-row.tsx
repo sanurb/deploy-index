@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
+import { neonHex } from "@/lib/graph/neon-palette";
 import type { GraphNode } from "@/types/graph";
 
 interface BlastPanelRowProps {
@@ -27,7 +28,7 @@ export function BlastPanelRow({ node, slug, onSelect }: BlastPanelRowProps) {
               <span className="text-slate-600">·</span>
               <span
                 className="inline-block size-2 rounded-full"
-                style={{ backgroundColor: `#${node.colorKey}` }}
+                style={{ backgroundColor: neonHex(node.colorKey) }}
               />
               <span>{node.ownerName}</span>
             </>

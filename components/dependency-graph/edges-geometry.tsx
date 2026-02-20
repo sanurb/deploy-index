@@ -2,48 +2,230 @@
 
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  type LineSegments,
-} from "three";
+import { Color, NormalBlending, Vector3 } from "three";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { neonColorFromKey } from "@/lib/graph/neon-palette";
 import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
-// Edge color policy:
-//   Default:  owner color of the source node at 0.12 alpha (ultra-faint)
-//   Hover:    owner color at 0.5 alpha (neighborhood highlight)
-//   Selected: owner color at 0.75 alpha (locked neighborhood)
-//   Dimmed:   near-zero when something is selected and this edge is outside
-//   Declared: separate dashed pass
+// Edge color rules — NORMAL blending (not additive) to prevent white haze.
+// Color is owner neon tint at low alpha; only brightens on interaction.
+//
+//   Default:     opacity 0.08   (hairline, barely visible)
+//   Highlighted: opacity 0.30   (readable but not glowing)
+//   Dimmed:      opacity 0.02   (nearly invisible)
 // ---------------------------------------------------------------------------
 
-const DIMMED = new Color("#030508");
-const ownerEdgeCache = new Map<string, Color>();
+const OPACITY_DEFAULT = 0.08;
+const OPACITY_HIGHLIGHTED = 0.3;
+const OPACITY_DIMMED = 0;
 
-function ownerColorForEdge(colorKey: string): Color {
-  if (!colorKey) return new Color("#3F3F46");
-  const cached = ownerEdgeCache.get(colorKey);
-  if (cached) return cached;
-  const raw = new Color(`#${colorKey}`);
-  const hsl = { h: 0, s: 0, l: 0 };
-  raw.getHSL(hsl);
-  const c = new Color().setHSL(hsl.h, 0.7, 0.55);
-  ownerEdgeCache.set(colorKey, c);
-  return c;
-}
+// Hard cap: never highlight more than 12 edges at once
+const MAX_HIGHLIGHTED_EDGES = 12;
 
-interface EdgesGeometryProps {
-  readonly edges: readonly GraphEdge[];
-  readonly nodes: readonly GraphNode[];
-  readonly positions: readonly NodePosition[];
-  readonly selectedNodeId: string;
-  readonly hoveredNodeId: string;
+// Hairline thickness: all edges sub-1.2px, weight maps within narrow band
+const THICKNESS_MIN = 0.5;
+const THICKNESS_MAX = 1.0;
+
+function weightToThickness(weight: number): number {
+  const t = Math.min(Math.max(weight, 0), 1);
+  return THICKNESS_MIN + t * (THICKNESS_MAX - THICKNESS_MIN);
 }
 
 // ---------------------------------------------------------------------------
-// Single edge pass
+// Cubic Bezier
+// ---------------------------------------------------------------------------
+
+const SAMPLES_PER_CURVE = 16;
+
+function cubicBezier(
+  p0: Vector3,
+  p1: Vector3,
+  p2: Vector3,
+  p3: Vector3,
+  t: number,
+  out: Vector3
+): Vector3 {
+  const u = 1 - t;
+  const uu = u * u;
+  const uuu = uu * u;
+  const tt = t * t;
+  const ttt = tt * t;
+  out.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+  out.y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+  out.z = uuu * p0.z + 3 * uu * t * p1.z + 3 * u * tt * p2.z + ttt * p3.z;
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Control points — arcs flow outward from center
+// ---------------------------------------------------------------------------
+
+const _origin = new Vector3(0, 0, 0);
+const _mid = new Vector3();
+const _dir = new Vector3();
+const _up = new Vector3(0, 1, 0);
+const _perp = new Vector3();
+
+function computeControlPoints(
+  from: Vector3,
+  to: Vector3,
+  cp1: Vector3,
+  cp2: Vector3
+): void {
+  _mid.lerpVectors(from, to, 0.5);
+  const dist = from.distanceTo(to);
+
+  _dir.copy(_mid).sub(_origin);
+  const dirLen = _dir.length();
+  if (dirLen > 0.01) {
+    _dir.divideScalar(dirLen);
+  } else {
+    _dir.set(from.z - to.z, 0, to.x - from.x).normalize();
+  }
+
+  _perp.subVectors(to, from).cross(_up).normalize();
+
+  const arcMag = Math.min(dist * 0.25, 4.0);
+  const yLift = dist * 0.08;
+
+  cp1.lerpVectors(from, to, 0.33);
+  cp1.addScaledVector(_dir, arcMag * 0.6);
+  cp1.addScaledVector(_perp, arcMag * 0.15);
+  cp1.y += yLift;
+
+  cp2.lerpVectors(from, to, 0.67);
+  cp2.addScaledVector(_dir, arcMag * 0.6);
+  cp2.addScaledVector(_perp, -arcMag * 0.15);
+  cp2.y += yLift;
+}
+
+// ---------------------------------------------------------------------------
+// Build curve segments
+// ---------------------------------------------------------------------------
+
+interface CurveData {
+  positions: Float32Array;
+  colors: Float32Array;
+  segmentCount: number;
+}
+
+function buildCurveData(
+  edges: readonly GraphEdge[],
+  nodeMap: Map<string, GraphNode>,
+  posMap: Map<string, NodePosition>,
+  selectedNodeId: string,
+  hoveredNodeId: string
+): CurveData {
+  const segsPerEdge = SAMPLES_PER_CURVE - 1;
+  const maxSegments = edges.length * segsPerEdge;
+  const positions = new Float32Array(maxSegments * 6);
+  const colors = new Float32Array(maxSegments * 6);
+
+  const activeNode = selectedNodeId || hoveredNodeId;
+
+  const p0 = new Vector3();
+  const p3 = new Vector3();
+  const cp1 = new Vector3();
+  const cp2 = new Vector3();
+  const prev = new Vector3();
+  const curr = new Vector3();
+  const tmpColor = new Color();
+
+  let segIdx = 0;
+
+  for (const edge of edges) {
+    const fromPos = posMap.get(edge.fromId);
+    const toPos = posMap.get(edge.toId);
+    if (!fromPos || !toPos) continue;
+
+    p0.set(fromPos.x, fromPos.y, fromPos.z);
+    p3.set(toPos.x, toPos.y, toPos.z);
+    computeControlPoints(p0, p3, cp1, cp2);
+
+    const sourceNode = nodeMap.get(edge.fromId);
+    const neon = neonColorFromKey(sourceNode?.colorKey ?? "");
+
+    // Neutral tint: desaturate the neon for edges so they don't glow
+    const hsl = { h: 0, s: 0, l: 0 };
+    neon.getHSL(hsl);
+    tmpColor.setHSL(hsl.h, hsl.s * 0.4, hsl.l * 0.6);
+
+    const isNeighborEdge =
+      activeNode && (edge.fromId === activeNode || edge.toId === activeNode);
+
+    // Brighten neighborhood edges on interaction
+    if (isNeighborEdge) {
+      tmpColor.setHSL(hsl.h, hsl.s * 0.6, hsl.l * 0.7);
+    }
+
+    cubicBezier(p0, cp1, cp2, p3, 0, prev);
+
+    for (let s = 1; s < SAMPLES_PER_CURVE; s++) {
+      const t = s / (SAMPLES_PER_CURVE - 1);
+      cubicBezier(p0, cp1, cp2, p3, t, curr);
+
+      const off = segIdx * 6;
+      positions[off] = prev.x;
+      positions[off + 1] = prev.y;
+      positions[off + 2] = prev.z;
+      positions[off + 3] = curr.x;
+      positions[off + 4] = curr.y;
+      positions[off + 5] = curr.z;
+
+      colors[off] = tmpColor.r;
+      colors[off + 1] = tmpColor.g;
+      colors[off + 2] = tmpColor.b;
+      colors[off + 3] = tmpColor.r;
+      colors[off + 4] = tmpColor.g;
+      colors[off + 5] = tmpColor.b;
+
+      prev.copy(curr);
+      segIdx++;
+    }
+  }
+
+  return {
+    positions: positions.subarray(0, segIdx * 6),
+    colors: colors.subarray(0, segIdx * 6),
+    segmentCount: segIdx,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Weight buckets
+// ---------------------------------------------------------------------------
+
+interface WeightBucket {
+  edges: GraphEdge[];
+  linewidth: number;
+}
+
+function bucketByWeight(edges: readonly GraphEdge[]): WeightBucket[] {
+  const low: GraphEdge[] = [];
+  const mid: GraphEdge[] = [];
+  const high: GraphEdge[] = [];
+
+  for (const e of edges) {
+    if (e.weight < 0.35) low.push(e);
+    else if (e.weight < 0.7) mid.push(e);
+    else high.push(e);
+  }
+
+  const buckets: WeightBucket[] = [];
+  if (low.length > 0)
+    buckets.push({ edges: low, linewidth: weightToThickness(0.15) });
+  if (mid.length > 0)
+    buckets.push({ edges: mid, linewidth: weightToThickness(0.5) });
+  if (high.length > 0)
+    buckets.push({ edges: high, linewidth: weightToThickness(0.85) });
+  return buckets;
+}
+
+// ---------------------------------------------------------------------------
+// Edge pass — NORMAL blending, hairline, low alpha
 // ---------------------------------------------------------------------------
 
 function EdgePass({
@@ -53,6 +235,7 @@ function EdgePass({
   selectedNodeId,
   hoveredNodeId,
   isDashed,
+  linewidth,
 }: {
   edges: readonly GraphEdge[];
   nodeMap: Map<string, GraphNode>;
@@ -60,80 +243,45 @@ function EdgePass({
   selectedNodeId: string;
   hoveredNodeId: string;
   isDashed: boolean;
+  linewidth: number;
 }) {
-  const lineRef = useRef<LineSegments>(null);
-  const { invalidate } = useThree();
+  const lineRef = useRef<LineSegments2>(null);
+  const matRef = useRef<LineMaterial>(null);
+  const { invalidate, size } = useThree();
+
+  const hasActive = Boolean(selectedNodeId || hoveredNodeId);
+  const opacity = hasActive
+    ? isDashed
+      ? OPACITY_HIGHLIGHTED * 0.7
+      : OPACITY_HIGHLIGHTED
+    : isDashed
+      ? OPACITY_DEFAULT * 0.8
+      : OPACITY_DEFAULT;
 
   useEffect(() => {
-    const line = lineRef.current;
-    if (!line || edges.length === 0) return;
+    if (!lineRef.current || !matRef.current || edges.length === 0) return;
 
-    const vertexCount = edges.length * 2;
-    const posArray = new Float32Array(vertexCount * 3);
-    const colorArray = new Float32Array(vertexCount * 3);
+    const { positions, colors, segmentCount } = buildCurveData(
+      edges,
+      nodeMap,
+      posMap,
+      selectedNodeId,
+      hoveredNodeId
+    );
 
-    const hasSelection = Boolean(selectedNodeId);
-    const activeNode = selectedNodeId || hoveredNodeId;
-    const tmpColor = new Color();
+    if (segmentCount === 0) return;
 
-    for (let i = 0; i < edges.length; i++) {
-      const edge = edges[i];
-      const from = posMap.get(edge.fromId);
-      const to = posMap.get(edge.toId);
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(positions);
+    geo.setColors(colors);
 
-      const idx = i * 6;
-      posArray[idx] = from?.x ?? 0;
-      posArray[idx + 1] = from?.y ?? 0;
-      posArray[idx + 2] = from?.z ?? 0;
-      posArray[idx + 3] = to?.x ?? 0;
-      posArray[idx + 4] = to?.y ?? 0;
-      posArray[idx + 5] = to?.z ?? 0;
+    lineRef.current.geometry.dispose();
+    lineRef.current.geometry = geo;
+    lineRef.current.computeLineDistances();
 
-      // Derive color from source node's owner
-      const sourceNode = nodeMap.get(edge.fromId);
-      const ownerColor = ownerColorForEdge(sourceNode?.colorKey ?? "");
-
-      const isNeighborEdge =
-        activeNode && (edge.fromId === activeNode || edge.toId === activeNode);
-
-      if (isNeighborEdge && selectedNodeId) {
-        tmpColor.copy(ownerColor).multiplyScalar(1.4);
-      } else if (isNeighborEdge) {
-        tmpColor.copy(ownerColor).multiplyScalar(0.9);
-      } else if (hasSelection) {
-        tmpColor.copy(DIMMED);
-      } else {
-        // Default: very faint owner color
-        tmpColor.copy(ownerColor).multiplyScalar(0.2);
-      }
-
-      const cidx = i * 6;
-      colorArray[cidx] = tmpColor.r;
-      colorArray[cidx + 1] = tmpColor.g;
-      colorArray[cidx + 2] = tmpColor.b;
-      colorArray[cidx + 3] = tmpColor.r;
-      colorArray[cidx + 4] = tmpColor.g;
-      colorArray[cidx + 5] = tmpColor.b;
-    }
-
-    const geo = line.geometry as BufferGeometry;
-    geo.setAttribute("position", new BufferAttribute(posArray, 3));
-    geo.setAttribute("color", new BufferAttribute(colorArray, 3));
-    geo.computeBoundingSphere();
-
-    if (isDashed) {
-      const distances = new Float32Array(vertexCount);
-      for (let i = 0; i < edges.length; i++) {
-        const from = posMap.get(edges[i].fromId);
-        const to = posMap.get(edges[i].toId);
-        const dx = (to?.x ?? 0) - (from?.x ?? 0);
-        const dy = (to?.y ?? 0) - (from?.y ?? 0);
-        const dz = (to?.z ?? 0) - (from?.z ?? 0);
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        distances[i * 2] = 0;
-        distances[i * 2 + 1] = dist;
-      }
-      geo.setAttribute("lineDistance", new BufferAttribute(distances, 1));
+    // Update opacity on the material
+    if (matRef.current) {
+      matRef.current.opacity = opacity;
     }
 
     invalidate();
@@ -143,37 +291,56 @@ function EdgePass({
     posMap,
     selectedNodeId,
     hoveredNodeId,
-    isDashed,
     invalidate,
+    opacity,
   ]);
+
+  useEffect(() => {
+    if (matRef.current) {
+      matRef.current.resolution.set(size.width, size.height);
+    }
+  }, [size]);
 
   if (edges.length === 0) return null;
 
-  // Opacity: neighborhood edges are more visible
-  const hasActive = Boolean(selectedNodeId || hoveredNodeId);
-  const baseOpacity = isDashed ? 0.35 : 0.5;
-
   return (
-    <lineSegments ref={lineRef}>
-      <bufferGeometry />
-      {isDashed ? (
-        <lineDashedMaterial
-          dashSize={0.5}
-          gapSize={0.35}
-          opacity={baseOpacity}
-          transparent
-          vertexColors
-        />
-      ) : (
-        <lineBasicMaterial opacity={baseOpacity} transparent vertexColors />
-      )}
-    </lineSegments>
+    <primitive object={new LineSegments2()} ref={lineRef}>
+      <primitive
+        attach="material"
+        object={
+          new LineMaterial({
+            vertexColors: true,
+            linewidth,
+            transparent: true,
+            opacity,
+            dashed: isDashed,
+            dashScale: 1,
+            dashSize: 0.6,
+            gapSize: 0.4,
+            worldUnits: false,
+            blending: NormalBlending,
+            depthWrite: false,
+            toneMapped: true,
+            resolution: [size.width, size.height],
+          } as ConstructorParameters<typeof LineMaterial>[0])
+        }
+        ref={matRef}
+      />
+    </primitive>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Public — splits confirmed/declared, builds lookup maps
+// Public
 // ---------------------------------------------------------------------------
+
+interface EdgesGeometryProps {
+  readonly edges: readonly GraphEdge[];
+  readonly nodes: readonly GraphNode[];
+  readonly positions: readonly NodePosition[];
+  readonly selectedNodeId: string;
+  readonly hoveredNodeId: string;
+}
 
 export function EdgesGeometry({
   edges,
@@ -198,34 +365,69 @@ export function EdgesGeometry({
     return map;
   }, [nodes]);
 
-  const confirmedEdges = useMemo(
-    () => edges.filter((e) => e.strength === "confirmed"),
-    [edges]
+  const activeNode = selectedNodeId || hoveredNodeId;
+
+  // When a node is active, only render neighborhood edges (capped at 12).
+  // Non-neighborhood edges are fully hidden (OPACITY_DIMMED=0), so skip them.
+  const visibleEdges = useMemo(() => {
+    if (!activeNode) return edges;
+
+    const neighborhood = edges.filter(
+      (e) => e.fromId === activeNode || e.toId === activeNode
+    );
+
+    if (neighborhood.length <= MAX_HIGHLIGHTED_EDGES) return neighborhood;
+
+    // Cap at 12 highest-weight edges
+    return [...neighborhood]
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, MAX_HIGHLIGHTED_EDGES);
+  }, [edges, activeNode]);
+
+  // When no node is active, show all edges at default opacity
+  const defaultEdges = useMemo(() => {
+    if (activeNode) return [];
+    return edges;
+  }, [edges, activeNode]);
+
+  const allVisible = activeNode ? visibleEdges : defaultEdges;
+
+  const confirmedBuckets = useMemo(
+    () => bucketByWeight(allVisible.filter((e) => e.strength === "confirmed")),
+    [allVisible]
   );
 
-  const declaredEdges = useMemo(
-    () => edges.filter((e) => e.strength === "declared"),
-    [edges]
+  const declaredBuckets = useMemo(
+    () => bucketByWeight(allVisible.filter((e) => e.strength === "declared")),
+    [allVisible]
   );
 
   return (
     <>
-      <EdgePass
-        edges={confirmedEdges}
-        hoveredNodeId={hoveredNodeId}
-        isDashed={false}
-        nodeMap={nodeMap}
-        posMap={posMap}
-        selectedNodeId={selectedNodeId}
-      />
-      <EdgePass
-        edges={declaredEdges}
-        hoveredNodeId={hoveredNodeId}
-        isDashed
-        nodeMap={nodeMap}
-        posMap={posMap}
-        selectedNodeId={selectedNodeId}
-      />
+      {confirmedBuckets.map((bucket, i) => (
+        <EdgePass
+          edges={bucket.edges}
+          hoveredNodeId={hoveredNodeId}
+          isDashed={false}
+          key={`c-${i}`}
+          linewidth={bucket.linewidth}
+          nodeMap={nodeMap}
+          posMap={posMap}
+          selectedNodeId={selectedNodeId}
+        />
+      ))}
+      {declaredBuckets.map((bucket, i) => (
+        <EdgePass
+          edges={bucket.edges}
+          hoveredNodeId={hoveredNodeId}
+          isDashed
+          key={`d-${i}`}
+          linewidth={bucket.linewidth}
+          nodeMap={nodeMap}
+          posMap={posMap}
+          selectedNodeId={selectedNodeId}
+        />
+      ))}
     </>
   );
 }

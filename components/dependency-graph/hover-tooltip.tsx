@@ -2,6 +2,7 @@
 
 import { Html } from "@react-three/drei";
 import { useMemo } from "react";
+import { neonHex } from "@/lib/graph/neon-palette";
 import type { GraphNode, NodePosition } from "@/types/graph";
 
 interface HoverTooltipProps {
@@ -55,7 +56,7 @@ export function HoverTooltip({
             <>
               <span
                 className="inline-block size-1.5 rounded-full"
-                style={{ backgroundColor: `#${node.colorKey}` }}
+                style={{ backgroundColor: neonHex(node.colorKey) }}
               />
               <span>{node.ownerName}</span>
               <span className="text-white/10">|</span>

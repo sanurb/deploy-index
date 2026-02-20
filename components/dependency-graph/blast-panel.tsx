@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowUpRight, Clipboard, Download } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { neonHex } from "@/lib/graph/neon-palette";
 import type { GraphNode, GraphResponse } from "@/types/graph";
 import { BlastPanelRow } from "./blast-panel-row";
 import {
@@ -126,7 +127,7 @@ export function BlastPanel({
                   <span
                     className="inline-block size-2 rounded-full"
                     style={{
-                      backgroundColor: `#${displayNode.colorKey}`,
+                      backgroundColor: neonHex(displayNode.colorKey),
                     }}
                   />
                   {displayNode.ownerName}

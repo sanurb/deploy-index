@@ -2,19 +2,27 @@
 
 import { Billboard, Text } from "@react-three/drei";
 import { useMemo } from "react";
-import { Color } from "three";
+import { NEON_BG_CSS } from "@/lib/graph/neon-palette";
 import type { GraphNode, NodePosition } from "@/types/graph";
 
 /**
- * Label strategy — strict priority, max 8:
- *  1. Focus node (always, largest, white)
- *  2. Hovered node (if any)
- *  3. Selected node (if different from focus)
- *  4. Top-N software nodes by impactScore (skip deps/runtimes — noise)
+ * Labels: crisp neutral text, NOT neon.  Zero bloom contribution.
  *
- * Color: owner color tinted toward white (50% blend)
- * Focus: pure white, 0.5em
- * Glow: outlineColor matches owner at low opacity for subtle neon halo
+ * Text is off-white / light gray with a dark background outline.
+ * The "neon" language belongs to geometry, not typography.
+ *
+ * Strategy — strict priority, max 8:
+ *  1. Focus node
+ *  2. Hovered node
+ *  3. Selected node
+ *  4. Top-N software by impactScore
+ *
+ * Confidence encoding:
+ *  - High (≥0.7):  full brightness text (#C8CCD4)
+ *  - Medium (0.4–0.7): dimmer text (#8891A0)
+ *  - Low (<0.4):   dim text (#6B7280) + warning glyph
+ *
+ * Missing fields: prepend "⚠ " glyph
  */
 
 interface LabelsProps {
@@ -26,25 +34,21 @@ interface LabelsProps {
 }
 
 const MAX_LABELS = 8;
-const BG_COLOR = "#05070B";
 
-function ownerLabelColor(colorKey: string): string {
-  if (!colorKey) return "#94A3B8";
-  const raw = new Color(`#${colorKey}`);
-  const hsl = { h: 0, s: 0, l: 0 };
-  raw.getHSL(hsl);
-  // Vivid but lighter for readability — blend toward white
-  const c = new Color().setHSL(hsl.h, 0.6, 0.78);
-  return `#${c.getHexString()}`;
-}
+// Neutral grays — no saturation, no bloom contribution
+const TEXT_BRIGHT = "#D1D5DB"; // focus / selected
+const TEXT_NORMAL = "#9CA3AF"; // top-N
+const TEXT_DIM = "#6B7280"; // low confidence
 
-function ownerGlowColor(colorKey: string): string {
-  if (!colorKey) return BG_COLOR;
-  const raw = new Color(`#${colorKey}`);
-  const hsl = { h: 0, s: 0, l: 0 };
-  raw.getHSL(hsl);
-  const c = new Color().setHSL(hsl.h, 0.8, 0.35);
-  return `#${c.getHexString()}`;
+function labelColor(
+  isFocus: boolean,
+  isSelected: boolean,
+  confidence: number
+): string {
+  if (isFocus || isSelected) return TEXT_BRIGHT;
+  if (confidence < 0.4) return TEXT_DIM;
+  if (confidence < 0.7) return "#8891A0";
+  return TEXT_NORMAL;
 }
 
 export function Labels({
@@ -78,7 +82,6 @@ export function Labels({
     tryAdd(hoveredNodeId);
     tryAdd(selectedNodeId);
 
-    // Top impact software nodes
     const sorted = [...nodes]
       .filter((n) => n.kind === "software")
       .sort((a, b) => b.impactScore - a.impactScore);
@@ -102,23 +105,14 @@ export function Labels({
         const scale = Math.log2(node.prodInterfaceCount + 1) * 0.3 + 0.45;
         const yOffset = isFocus ? scale * 1.4 + 0.6 : scale + 0.45;
 
-        let color: string;
-        let fontSize: number;
-        let outlineColor: string;
+        const hasMissingFields = node.missingFields.length > 0;
+        const label =
+          hasMissingFields && node.confidenceScore < 0.7
+            ? `\u26A0 ${node.displayName}`
+            : node.displayName;
 
-        if (isFocus) {
-          color = "#F8FAFC";
-          fontSize = 0.5;
-          outlineColor = ownerGlowColor(node.colorKey);
-        } else if (isSelected) {
-          color = ownerLabelColor(node.colorKey);
-          fontSize = 0.4;
-          outlineColor = ownerGlowColor(node.colorKey);
-        } else {
-          color = ownerLabelColor(node.colorKey);
-          fontSize = 0.3;
-          outlineColor = BG_COLOR;
-        }
+        const color = labelColor(isFocus, isSelected, node.confidenceScore);
+        const fontSize = isFocus ? 0.45 : isSelected ? 0.38 : 0.28;
 
         return (
           <Billboard
@@ -131,10 +125,10 @@ export function Labels({
               color={color}
               fontSize={fontSize}
               maxWidth={6}
-              outlineColor={outlineColor}
-              outlineWidth={isFocus || isSelected ? 0.06 : 0.04}
+              outlineColor={NEON_BG_CSS}
+              outlineWidth={0.05}
             >
-              {node.displayName}
+              {label}
             </Text>
           </Billboard>
         );

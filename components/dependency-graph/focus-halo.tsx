@@ -3,20 +3,24 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { AdditiveBlending, type Mesh } from "three";
+import { neonHex } from "@/lib/graph/neon-palette";
 import type { NodePosition } from "@/types/graph";
 
 /**
- * Focus node halo — a soft radial glow sprite centered on the focus node.
- * Uses additive blending + high emissive so the bloom pass picks it up.
- * Creates the "radial light" effect that makes the focus node dominant.
+ * Focus halo — a tight wireframe ring around the focus node.
+ * NOT a volumetric sphere.  Just a thin torus at scale ~1.08 with
+ * low additive opacity so bloom picks it up subtly.
+ *
+ * This makes the focus node unmistakable within 2 seconds without
+ * polluting the background or stacking with other additive layers.
  */
 
 interface FocusHaloProps {
   readonly position: NodePosition | null;
-  readonly color: string;
+  readonly colorKey: string;
 }
 
-export function FocusHalo({ position, color }: FocusHaloProps) {
+export function FocusHalo({ position, colorKey }: FocusHaloProps) {
   const meshRef = useRef<Mesh>(null);
   const { invalidate } = useThree();
 
@@ -26,16 +30,21 @@ export function FocusHalo({ position, color }: FocusHaloProps) {
 
   if (!position) return null;
 
+  const hex = neonHex(colorKey);
+
   return (
-    <mesh position={[position.x, position.y, position.z]} ref={meshRef}>
-      <sphereGeometry args={[2.2, 32, 32]} />
-      <meshStandardMaterial
+    <mesh
+      position={[position.x, position.y, position.z]}
+      ref={meshRef}
+      renderOrder={0}
+    >
+      {/* Torus: radius matches focus-scale node, tube is thin */}
+      <torusGeometry args={[1.1, 0.04, 8, 48]} />
+      <meshBasicMaterial
         blending={AdditiveBlending}
-        color={color}
+        color={hex}
         depthWrite={false}
-        emissive={color}
-        emissiveIntensity={0.4}
-        opacity={0.08}
+        opacity={0.25}
         toneMapped={false}
         transparent
       />

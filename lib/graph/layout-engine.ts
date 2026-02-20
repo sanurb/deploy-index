@@ -103,34 +103,37 @@ export function computeLayout(
     positions.push({ nodeId: node.nodeId, x, y, z });
   }
 
-  // Relaxation: 3 passes, push apart nodes closer than 1.2 units
+  // Single time-boxed relaxation pass: push apart nodes closer than 1.2 units
+  // Budget: 6ms max, then freeze permanently. No continuous motion.
   const MIN_DIST = 1.2;
   const MAX_DISPLACEMENT = 0.5;
+  const RELAXATION_BUDGET_MS = 6;
+  const relaxStart = performance.now();
 
-  for (let pass = 0; pass < 3; pass++) {
-    for (let i = 0; i < positions.length; i++) {
-      for (let j = i + 1; j < positions.length; j++) {
-        const a = positions[i];
-        const b = positions[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dz = b.z - a.z;
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  outer: for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      if (performance.now() - relaxStart > RELAXATION_BUDGET_MS) break outer;
 
-        if (dist < MIN_DIST && dist > 0.001) {
-          const push = ((MIN_DIST - dist) / 2) * 0.5;
-          const nx = (dx / dist) * Math.min(push, MAX_DISPLACEMENT);
-          const ny = (dy / dist) * Math.min(push, MAX_DISPLACEMENT);
-          const nz = (dz / dist) * Math.min(push, MAX_DISPLACEMENT);
+      const a = positions[i];
+      const b = positions[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dz = b.z - a.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-          // Mutate positions array (we own it)
-          (positions[i] as { x: number; y: number; z: number }).x -= nx;
-          (positions[i] as { x: number; y: number; z: number }).y -= ny;
-          (positions[i] as { x: number; y: number; z: number }).z -= nz;
-          (positions[j] as { x: number; y: number; z: number }).x += nx;
-          (positions[j] as { x: number; y: number; z: number }).y += ny;
-          (positions[j] as { x: number; y: number; z: number }).z += nz;
-        }
+      if (dist < MIN_DIST && dist > 0.001) {
+        const push = ((MIN_DIST - dist) / 2) * 0.5;
+        const nx = (dx / dist) * Math.min(push, MAX_DISPLACEMENT);
+        const ny = (dy / dist) * Math.min(push, MAX_DISPLACEMENT);
+        const nz = (dz / dist) * Math.min(push, MAX_DISPLACEMENT);
+
+        // Mutate positions array (we own it)
+        (positions[i] as { x: number; y: number; z: number }).x -= nx;
+        (positions[i] as { x: number; y: number; z: number }).y -= ny;
+        (positions[i] as { x: number; y: number; z: number }).z -= nz;
+        (positions[j] as { x: number; y: number; z: number }).x += nx;
+        (positions[j] as { x: number; y: number; z: number }).y += ny;
+        (positions[j] as { x: number; y: number; z: number }).z += nz;
       }
     }
   }

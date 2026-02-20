@@ -1,17 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import { RingGeometry } from "three";
+import { AdditiveBlending } from "three";
 
 /**
  * Concentric ring guides on the ground plane (Y=0).
- * One ring per hop distance, matching layout-engine radii [0, 4, 8, 13, 19, 26].
- * Faint, structural, never distracting — communicates hop distance without a legend.
+ * Neon-tinted: very faint cyan-blue additive glow, subtle structural cue.
  */
 
 const HOP_RADII = [4, 8, 13, 19, 26];
-const RING_COLOR = "#0F1219";
-const RING_OPACITY = 0.25;
+const RING_COLOR = "#0a1828";
+const RING_OPACITY = 0.2;
 const RING_THICKNESS = 0.03;
 
 export function HopRings({ maxHops }: { readonly maxHops: number }) {
@@ -25,8 +24,11 @@ export function HopRings({ maxHops }: { readonly maxHops: number }) {
             args={[radius - RING_THICKNESS, radius + RING_THICKNESS, 128]}
           />
           <meshBasicMaterial
+            blending={AdditiveBlending}
             color={RING_COLOR}
+            depthWrite={false}
             opacity={RING_OPACITY - i * 0.03}
+            toneMapped={false}
             transparent
           />
         </mesh>

@@ -2,66 +2,47 @@
 
 import { useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Color, type InstancedMesh, Object3D } from "three";
+import { AdditiveBlending, Color, type InstancedMesh, Object3D } from "three";
+import { neonColorFromKey } from "@/lib/graph/neon-palette";
 import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
-// Owner color: colorKey → vivid neon via forced HSL
+// Brightness rules — CONSERVATIVE.  Additive blending means any stacking
+// becomes a white haze.  Keep idle nodes *barely* visible and only let
+// the active neighborhood push above bloom threshold (0.75).
+//
+//   Focus:      0.50   — clearly dominant, will bloom subtly
+//   Hovered:    0.40   — visible glow
+//   Selected:   0.38
+//   Neighbor:   0.28   — readable but secondary
+//   Idle:       0.08   — faint constellation dust
+//   Dimmed:     0.025  — near-invisible when selection active
 // ---------------------------------------------------------------------------
 
-const ownerColorCache = new Map<string, Color>();
+const BRIGHT_FOCUS = 0.5;
+const BRIGHT_HOVERED = 0.4;
+const BRIGHT_SELECTED = 0.38;
+const BRIGHT_NEIGHBOR = 0.28;
+const BRIGHT_IDLE = 0.08;
+const BRIGHT_DIMMED = 0.025;
 
-function ownerColorVivid(colorKey: string): Color {
-  if (!colorKey) return new Color("#64748B");
-  const cached = ownerColorCache.get(colorKey);
-  if (cached) return cached;
+// Halo: only rendered for active nodes (focus/hover/selected).
+// Tight scale to avoid overlap, very low intensity.
+const HALO_SCALE = 1.08;
+const HALO_INTENSITY = 0.22;
 
-  const raw = new Color(`#${colorKey}`);
-  const hsl = { h: 0, s: 0, l: 0 };
-  raw.getHSL(hsl);
-  // Force vivid: saturation 70–85%, lightness 55–65%
-  const c = new Color().setHSL(
-    hsl.h,
-    0.7 + (hsl.s > 0.5 ? 0.15 : 0),
-    0.55 + hsl.l * 0.1
-  );
-  ownerColorCache.set(colorKey, c);
-  return c;
-}
+// Render order: halo behind core for stable compositing
+const RENDER_ORDER_HALO = 1;
+const RENDER_ORDER_CORE = 2;
 
-// ---------------------------------------------------------------------------
-// Emissive intensity from impactScore (0–100 → 0.15–0.9)
-// Higher impact = stronger glow, bloom picks up > 0.6
-// ---------------------------------------------------------------------------
-
-function impactEmissive(impactScore: number): number {
-  return 0.15 + (impactScore / 100) * 0.75;
-}
+// Scratch objects (reused every update, never allocate in loop)
+const tmpObj = new Object3D();
+const tmpColor = new Color();
+const tmpHsl = { h: 0, s: 0, l: 0 };
+const BLACK = new Color(0x000000);
 
 // ---------------------------------------------------------------------------
-// Confidence → desaturation + opacity
-// ---------------------------------------------------------------------------
-
-function confidenceDesaturate(color: Color, score: number): Color {
-  if (score >= 0.7) return color;
-  const hsl = { h: 0, s: 0, l: 0 };
-  color.getHSL(hsl);
-  if (score >= 0.4) {
-    // Medium: desaturate 30%
-    return new Color().setHSL(hsl.h, hsl.s * 0.7, hsl.l);
-  }
-  // Low: desaturate 60%
-  return new Color().setHSL(hsl.h, hsl.s * 0.4, hsl.l * 0.85);
-}
-
-function confidenceOpacity(score: number): number {
-  if (score >= 0.7) return 1.0;
-  if (score >= 0.4) return 0.75;
-  return 0.5;
-}
-
-// ---------------------------------------------------------------------------
-// Node scale: prodInterfaceCount + focus boost
+// Node scale
 // ---------------------------------------------------------------------------
 
 function nodeScale(node: GraphNode, isFocus: boolean): number {
@@ -70,11 +51,18 @@ function nodeScale(node: GraphNode, isFocus: boolean): number {
 }
 
 // ---------------------------------------------------------------------------
-// Scratch objects
+// Confidence desaturation
 // ---------------------------------------------------------------------------
 
-const tmpObj = new Object3D();
-const tmpColor = new Color();
+function applyConfidenceDesaturation(color: Color, score: number): void {
+  if (score >= 0.7) return;
+  color.getHSL(tmpHsl);
+  if (score >= 0.4) {
+    color.setHSL(tmpHsl.h, tmpHsl.s * 0.7, tmpHsl.l);
+  } else {
+    color.setHSL(tmpHsl.h, tmpHsl.s * 0.45, tmpHsl.l * 0.85);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -92,7 +80,7 @@ interface NodesMeshProps {
 }
 
 // ---------------------------------------------------------------------------
-// Per-kind instanced mesh: fill + wireframe overlay
+// Per-kind: core wireframe (always) + halo wireframe (active nodes only)
 // ---------------------------------------------------------------------------
 
 function KindMesh({
@@ -116,8 +104,8 @@ function KindMesh({
   onHover: (nodeId: string) => void;
   onClick: (nodeId: string) => void;
 }) {
-  const fillRef = useRef<InstancedMesh>(null);
-  const wireRef = useRef<InstancedMesh>(null);
+  const coreRef = useRef<InstancedMesh>(null);
+  const haloRef = useRef<InstancedMesh>(null);
   const { invalidate } = useThree();
   const count = nodes.length;
 
@@ -130,9 +118,9 @@ function KindMesh({
   }, [nodes]);
 
   useEffect(() => {
-    const fill = fillRef.current;
-    const wire = wireRef.current;
-    if (!fill || count === 0) return;
+    const core = coreRef.current;
+    const halo = haloRef.current;
+    if (!core || !halo || count === 0) return;
 
     const hasSelection = Boolean(selectedNodeId);
     const activeNode = selectedNodeId || hoveredNodeId;
@@ -149,65 +137,54 @@ function KindMesh({
         activeNode &&
         (node.nodeId === activeNode || neighborhoodSet.has(node.nodeId));
 
-      // --- Transform ---
+      // --- Brightness ---
+      let brightness: number;
+      if (isFocus) brightness = BRIGHT_FOCUS;
+      else if (isHovered) brightness = BRIGHT_HOVERED;
+      else if (isSelected) brightness = BRIGHT_SELECTED;
+      else if (isInNeighborhood) brightness = BRIGHT_NEIGHBOR;
+      else if (hasSelection) brightness = BRIGHT_DIMMED;
+      else brightness = BRIGHT_IDLE;
+
+      // Confidence penalty for non-interactive nodes
+      if (!isFocus && !isHovered && !isSelected) {
+        if (node.confidenceScore < 0.4) brightness *= 0.5;
+        else if (node.confidenceScore < 0.7) brightness *= 0.75;
+      }
+
       const scale = nodeScale(node, isFocus);
+      const neon = neonColorFromKey(node.colorKey);
+      if (!isFocus) applyConfidenceDesaturation(neon, node.confidenceScore);
+
+      // --- Core wireframe ---
       tmpObj.position.set(pos.x, pos.y, pos.z);
       tmpObj.scale.setScalar(scale);
       tmpObj.updateMatrix();
-      fill.setMatrixAt(i, tmpObj.matrix);
+      core.setMatrixAt(i, tmpObj.matrix);
+      tmpColor.copy(neon).multiplyScalar(brightness);
+      core.setColorAt(i, tmpColor);
 
-      // Wireframe overlay: slightly larger
-      if (wire) {
-        tmpObj.scale.setScalar(scale * 1.08);
+      // --- Halo: ONLY for focus / hovered / selected — black (invisible) otherwise ---
+      const isActive = isFocus || isHovered || isSelected;
+      if (isActive) {
+        tmpObj.scale.setScalar(scale * HALO_SCALE);
         tmpObj.updateMatrix();
-        wire.setMatrixAt(i, tmpObj.matrix);
-      }
-
-      // --- Color: vivid owner-based ---
-      const ownerBase = ownerColorVivid(node.colorKey);
-      tmpColor.copy(ownerBase);
-
-      // Focus node: white emissive override
-      if (isFocus) {
-        tmpColor.setRGB(0.95, 0.95, 0.97);
-      } else if (isSelected) {
-        // Brighten owner color
-        tmpColor.lerp(new Color("#FFFFFF"), 0.35);
-      } else if (isHovered) {
-        tmpColor.lerp(new Color("#FFFFFF"), 0.2);
-      }
-
-      // Confidence: desaturate low-confidence nodes
-      if (!isFocus && !isSelected) {
-        const desaturated = confidenceDesaturate(
-          tmpColor.clone(),
-          node.confidenceScore
-        );
-        tmpColor.copy(desaturated);
-      }
-
-      // Selection dimming: non-neighborhood fades
-      if (hasSelection && !isInNeighborhood && !isFocus) {
-        const gray =
-          tmpColor.r * 0.299 + tmpColor.g * 0.587 + tmpColor.b * 0.114;
-        tmpColor.setRGB(gray * 0.15, gray * 0.15, gray * 0.18);
-      }
-
-      fill.setColorAt(i, tmpColor);
-
-      // Wireframe: same color but dimmer for structural overlay
-      if (wire) {
-        const wireColor = tmpColor.clone().multiplyScalar(0.6);
-        wire.setColorAt(i, wireColor);
+        halo.setMatrixAt(i, tmpObj.matrix);
+        tmpColor.copy(neon).multiplyScalar(brightness * HALO_INTENSITY);
+        halo.setColorAt(i, tmpColor);
+      } else {
+        // Collapse to zero and paint black — zero additive contribution
+        tmpObj.scale.setScalar(0);
+        tmpObj.updateMatrix();
+        halo.setMatrixAt(i, tmpObj.matrix);
+        halo.setColorAt(i, BLACK);
       }
     }
 
-    fill.instanceMatrix.needsUpdate = true;
-    if (fill.instanceColor) fill.instanceColor.needsUpdate = true;
-    if (wire) {
-      wire.instanceMatrix.needsUpdate = true;
-      if (wire.instanceColor) wire.instanceColor.needsUpdate = true;
-    }
+    core.instanceMatrix.needsUpdate = true;
+    if (core.instanceColor) core.instanceColor.needsUpdate = true;
+    halo.instanceMatrix.needsUpdate = true;
+    if (halo.instanceColor) halo.instanceColor.needsUpdate = true;
     invalidate();
   }, [
     nodes,
@@ -219,10 +196,6 @@ function KindMesh({
     count,
     invalidate,
   ]);
-
-  // --- Emissive intensities via userData (recomputed per frame via effect) ---
-  // We encode emissive per-instance via the material's emissive + vertex color trick:
-  // the material emissive is set to a base, and vertex colors amplify it.
 
   const handlePointerOver = useCallback(
     (e: { instanceId?: number; stopPropagation: () => void }) => {
@@ -252,17 +225,6 @@ function KindMesh({
 
   if (count === 0) return null;
 
-  // Compute a representative emissive intensity for the whole batch
-  // (average impactScore — individual variation happens via vertex color brightness)
-  const avgEmissive = useMemo(() => {
-    if (nodes.length === 0) return 0.3;
-    const sum = nodes.reduce(
-      (acc, n) => acc + impactEmissive(n.impactScore),
-      0
-    );
-    return sum / nodes.length;
-  }, [nodes]);
-
   const geometryElement =
     geometry === "icosahedron" ? (
       <icosahedronGeometry args={[1, 1]} />
@@ -274,31 +236,36 @@ function KindMesh({
 
   return (
     <group>
-      {/* Fill mesh */}
+      {/* Halo — only visible for active nodes, tight scale */}
+      <instancedMesh
+        args={[undefined, undefined, count]}
+        ref={haloRef}
+        renderOrder={RENDER_ORDER_HALO}
+      >
+        {geometryElement}
+        <meshBasicMaterial
+          blending={AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+          transparent
+          vertexColors
+          wireframe
+        />
+      </instancedMesh>
+
+      {/* Core wireframe — crisp thin outlines, interactive */}
       <instancedMesh
         args={[undefined, undefined, count]}
         onClick={handleClick}
         onPointerOut={handlePointerOut}
         onPointerOver={handlePointerOver}
-        ref={fillRef}
+        ref={coreRef}
+        renderOrder={RENDER_ORDER_CORE}
       >
         {geometryElement}
-        <meshStandardMaterial
-          emissive="#FFFFFF"
-          emissiveIntensity={avgEmissive}
-          metalness={0.1}
-          roughness={0.4}
-          toneMapped={false}
-          vertexColors
-        />
-      </instancedMesh>
-
-      {/* Wireframe overlay — communicates infrastructure sophistication */}
-      <instancedMesh args={[undefined, undefined, count]} ref={wireRef}>
-        {geometryElement}
         <meshBasicMaterial
+          blending={AdditiveBlending}
           depthWrite={false}
-          opacity={0.3}
           toneMapped={false}
           transparent
           vertexColors
@@ -331,7 +298,6 @@ export function NodesMesh({
     return map;
   }, [positionsArray]);
 
-  // 1-hop neighborhood
   const neighborhoodSet = useMemo(() => {
     const active = selectedNodeId || hoveredNodeId;
     const set = new Set<string>();
