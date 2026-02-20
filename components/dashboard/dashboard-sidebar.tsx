@@ -1,7 +1,7 @@
 "use client";
 
 import { SignedIn, SignedOut, UserButton } from "@daveyplate/better-auth-ui";
-import { Building2, Mail, Package, Users } from "lucide-react";
+import { Building2, GitBranch, Mail, Package, Users } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 
@@ -31,6 +31,7 @@ type NavigationItem = {
 
 const NAVIGATION_ITEMS: NavigationItem[] = [
   { title: "Services", path: "services", icon: Package },
+  { title: "Graph", path: "graph", icon: GitBranch },
   { title: "Organization", path: "settings", icon: Building2 },
   { title: "Members", path: "members", icon: Users },
   { title: "Invitations", path: "invitations", icon: Mail },

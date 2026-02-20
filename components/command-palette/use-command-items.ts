@@ -1,5 +1,6 @@
 import {
   Download,
+  GitBranch,
   Globe,
   Package,
   Plus,
@@ -79,6 +80,18 @@ export function useCommandItems(
       },
     });
 
+    items.push({
+      id: "nav-graph",
+      category: "navigate",
+      label: "Go to Dependency Graph",
+      icon: GitBranch,
+      url: `/organization/${slug}/graph`,
+      action: () => {
+        router.push(`/organization/${slug}/graph`);
+        onClose();
+      },
+    });
+
     // --- Dynamic: one per service ---
     for (const service of services) {
       items.push({
@@ -90,6 +103,21 @@ export function useCommandItems(
         hideInEmptyState: true,
         action: () => {
           onSetQuery(service.name);
+          onClose();
+        },
+      });
+
+      items.push({
+        id: `blast-${service.id}`,
+        category: "navigate",
+        label: `View blast radius: ${service.name}`,
+        description: `Graph · ${service.owner}`,
+        icon: GitBranch,
+        hideInEmptyState: true,
+        action: () => {
+          router.push(
+            `/organization/${slug}/graph?focusKind=service&focusId=${service.id}`
+          );
           onClose();
         },
       });
