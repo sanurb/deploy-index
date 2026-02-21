@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type { GraphLayout, GraphResponse } from "@/types/graph";
 import {
   CameraController,
@@ -8,7 +8,6 @@ import {
 } from "./camera-controller";
 import { EdgePackets } from "./edge-packets";
 import { EdgesGeometry } from "./edges-geometry";
-import { FocusHalo } from "./focus-halo";
 import { HopRings } from "./hop-rings";
 import { HoverTooltip } from "./hover-tooltip";
 import { Labels } from "./labels";
@@ -26,6 +25,7 @@ interface GraphCanvasProps {
   readonly onHover: (nodeId: string) => void;
   readonly cameraRef?: React.RefObject<CameraControllerHandle | null>;
   readonly className?: string;
+  readonly enablePostprocessing?: boolean;
 }
 
 export function GraphCanvas({
@@ -39,6 +39,7 @@ export function GraphCanvas({
   onHover,
   cameraRef: externalCameraRef,
   className,
+  enablePostprocessing = true,
 }: GraphCanvasProps) {
   const internalCameraRef = useRef<CameraControllerHandle>(null);
   const cameraRef = externalCameraRef ?? internalCameraRef;
@@ -54,25 +55,10 @@ export function GraphCanvas({
     [onSelect, layout.positions, cameraRef]
   );
 
-  // Focus node position for halo
-  const focusPos = useMemo(
-    () => layout.positions.find((p) => p.nodeId === data.focusNodeId) ?? null,
-    [layout.positions, data.focusNodeId]
-  );
-
-  // Focus node colorKey for neon halo tint
-  const focusNode = useMemo(
-    () => data.nodes.find((n) => n.nodeId === data.focusNodeId),
-    [data.nodes, data.focusNodeId]
-  );
-
   return (
-    <Scene className={className}>
+    <Scene className={className} enablePostprocessing={enablePostprocessing}>
       {/* Structural guides */}
       <HopRings maxHops={hops} />
-
-      {/* Focus halo — neon-colored radial glow */}
-      <FocusHalo colorKey={focusNode?.colorKey ?? ""} position={focusPos} />
 
       {/* Curved edges behind nodes */}
       <EdgesGeometry

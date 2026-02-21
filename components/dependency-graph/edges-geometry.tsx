@@ -1,6 +1,6 @@
 "use client";
 
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { Color, NormalBlending, Vector3 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -10,24 +10,33 @@ import { neonColorFromKey } from "@/lib/graph/neon-palette";
 import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
-// Edge color rules — NORMAL blending (not additive) to prevent white haze.
-// Color is owner neon tint at low alpha; only brightens on interaction.
-//
-//   Default:     opacity 0.08   (hairline, barely visible)
-//   Highlighted: opacity 0.30   (readable but not glowing)
-//   Dimmed:      opacity 0.02   (nearly invisible)
+// Opacity tiers
+//   Default:     idle edges, subtle but visible
+//   Highlighted: neighborhood of active node
+//   Dimmed:      non-neighborhood when a node is active (~20%)
 // ---------------------------------------------------------------------------
 
-const OPACITY_DEFAULT = 0.08;
-const OPACITY_HIGHLIGHTED = 0.3;
-const OPACITY_DIMMED = 0;
+const OPACITY_DEFAULT = 0.25;
+const OPACITY_HIGHLIGHTED = 0.55;
+const OPACITY_DIMMED = 0.05;
 
-// Hard cap: never highlight more than 12 edges at once
 const MAX_HIGHLIGHTED_EDGES = 12;
 
-// Hairline thickness: all edges sub-1.2px, weight maps within narrow band
-const THICKNESS_MIN = 0.5;
-const THICKNESS_MAX = 1.0;
+// Thickness
+const THICKNESS_MIN = 0.8;
+const THICKNESS_MAX = 1.4;
+const THICKNESS_BOOST = 0.4; // added to highlighted edges
+
+// Dash animation — slow, calm directional flow
+const DASH_SPEED = 0.12; // units per second
+
+// Confirmed edges: near-solid with subtle breaks
+const CONFIRMED_DASH_SIZE = 3.0;
+const CONFIRMED_GAP_SIZE = 0.3;
+
+// Declared edges: clearly dashed
+const DECLARED_DASH_SIZE = 0.6;
+const DECLARED_GAP_SIZE = 0.4;
 
 function weightToThickness(weight: number): number {
   const t = Math.min(Math.max(weight, 0), 1);
@@ -116,15 +125,12 @@ function buildCurveData(
   edges: readonly GraphEdge[],
   nodeMap: Map<string, GraphNode>,
   posMap: Map<string, NodePosition>,
-  selectedNodeId: string,
-  hoveredNodeId: string
+  isHighlighted: boolean
 ): CurveData {
   const segsPerEdge = SAMPLES_PER_CURVE - 1;
   const maxSegments = edges.length * segsPerEdge;
   const positions = new Float32Array(maxSegments * 6);
   const colors = new Float32Array(maxSegments * 6);
-
-  const activeNode = selectedNodeId || hoveredNodeId;
 
   const p0 = new Vector3();
   const p3 = new Vector3();
@@ -148,17 +154,13 @@ function buildCurveData(
     const sourceNode = nodeMap.get(edge.fromId);
     const neon = neonColorFromKey(sourceNode?.colorKey ?? "");
 
-    // Neutral tint: desaturate the neon for edges so they don't glow
     const hsl = { h: 0, s: 0, l: 0 };
     neon.getHSL(hsl);
-    tmpColor.setHSL(hsl.h, hsl.s * 0.4, hsl.l * 0.6);
 
-    const isNeighborEdge =
-      activeNode && (edge.fromId === activeNode || edge.toId === activeNode);
-
-    // Brighten neighborhood edges on interaction
-    if (isNeighborEdge) {
-      tmpColor.setHSL(hsl.h, hsl.s * 0.6, hsl.l * 0.7);
+    if (isHighlighted) {
+      tmpColor.setHSL(hsl.h, hsl.s * 0.7, hsl.l * 0.85);
+    } else {
+      tmpColor.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.7);
     }
 
     cubicBezier(p0, cp1, cp2, p3, 0, prev);
@@ -203,7 +205,10 @@ interface WeightBucket {
   linewidth: number;
 }
 
-function bucketByWeight(edges: readonly GraphEdge[]): WeightBucket[] {
+function bucketByWeight(
+  edges: readonly GraphEdge[],
+  thicknessBoost = 0
+): WeightBucket[] {
   const low: GraphEdge[] = [];
   const mid: GraphEdge[] = [];
   const high: GraphEdge[] = [];
@@ -216,48 +221,51 @@ function bucketByWeight(edges: readonly GraphEdge[]): WeightBucket[] {
 
   const buckets: WeightBucket[] = [];
   if (low.length > 0)
-    buckets.push({ edges: low, linewidth: weightToThickness(0.15) });
+    buckets.push({
+      edges: low,
+      linewidth: weightToThickness(0.15) + thicknessBoost,
+    });
   if (mid.length > 0)
-    buckets.push({ edges: mid, linewidth: weightToThickness(0.5) });
+    buckets.push({
+      edges: mid,
+      linewidth: weightToThickness(0.5) + thicknessBoost,
+    });
   if (high.length > 0)
-    buckets.push({ edges: high, linewidth: weightToThickness(0.85) });
+    buckets.push({
+      edges: high,
+      linewidth: weightToThickness(0.85) + thicknessBoost,
+    });
   return buckets;
 }
 
 // ---------------------------------------------------------------------------
-// Edge pass — NORMAL blending, hairline, low alpha
+// Edge pass — dashed, animated dashOffset via useFrame
 // ---------------------------------------------------------------------------
 
 function EdgePass({
   edges,
   nodeMap,
   posMap,
-  selectedNodeId,
-  hoveredNodeId,
-  isDashed,
+  isHighlighted,
+  dashSize,
+  gapSize,
   linewidth,
+  opacity,
 }: {
   edges: readonly GraphEdge[];
   nodeMap: Map<string, GraphNode>;
   posMap: Map<string, NodePosition>;
-  selectedNodeId: string;
-  hoveredNodeId: string;
-  isDashed: boolean;
+  isHighlighted: boolean;
+  dashSize: number;
+  gapSize: number;
   linewidth: number;
+  opacity: number;
 }) {
   const lineRef = useRef<LineSegments2>(null);
   const matRef = useRef<LineMaterial>(null);
-  const { invalidate, size } = useThree();
+  const { size } = useThree();
 
-  const hasActive = Boolean(selectedNodeId || hoveredNodeId);
-  const opacity = hasActive
-    ? isDashed
-      ? OPACITY_HIGHLIGHTED * 0.7
-      : OPACITY_HIGHLIGHTED
-    : isDashed
-      ? OPACITY_DEFAULT * 0.8
-      : OPACITY_DEFAULT;
-
+  // Build geometry when edges or interaction state change
   useEffect(() => {
     if (!lineRef.current || !matRef.current || edges.length === 0) return;
 
@@ -265,8 +273,7 @@ function EdgePass({
       edges,
       nodeMap,
       posMap,
-      selectedNodeId,
-      hoveredNodeId
+      isHighlighted
     );
 
     if (segmentCount === 0) return;
@@ -279,27 +286,25 @@ function EdgePass({
     lineRef.current.geometry = geo;
     lineRef.current.computeLineDistances();
 
-    // Update opacity on the material
     if (matRef.current) {
       matRef.current.opacity = opacity;
+      matRef.current.linewidth = linewidth;
     }
+  }, [edges, nodeMap, posMap, isHighlighted, opacity, linewidth]);
 
-    invalidate();
-  }, [
-    edges,
-    nodeMap,
-    posMap,
-    selectedNodeId,
-    hoveredNodeId,
-    invalidate,
-    opacity,
-  ]);
-
+  // Resolution sync
   useEffect(() => {
     if (matRef.current) {
       matRef.current.resolution.set(size.width, size.height);
     }
   }, [size]);
+
+  // Animate dashOffset — purely in material space, no React state
+  useFrame((_, delta) => {
+    if (matRef.current) {
+      matRef.current.dashOffset -= delta * DASH_SPEED;
+    }
+  });
 
   if (edges.length === 0) return null;
 
@@ -313,14 +318,15 @@ function EdgePass({
             linewidth,
             transparent: true,
             opacity,
-            dashed: isDashed,
+            dashed: true,
             dashScale: 1,
-            dashSize: 0.6,
-            gapSize: 0.4,
+            dashSize,
+            gapSize,
+            dashOffset: 0,
             worldUnits: false,
             blending: NormalBlending,
             depthWrite: false,
-            toneMapped: true,
+            toneMapped: false,
             resolution: [size.width, size.height],
           } as ConstructorParameters<typeof LineMaterial>[0])
         }
@@ -367,65 +373,122 @@ export function EdgesGeometry({
 
   const activeNode = selectedNodeId || hoveredNodeId;
 
-  // When a node is active, only render neighborhood edges (capped at 12).
-  // Non-neighborhood edges are fully hidden (OPACITY_DIMMED=0), so skip them.
-  const visibleEdges = useMemo(() => {
-    if (!activeNode) return edges;
+  // Split edges into neighborhood (highlighted) and background (dimmed)
+  const { neighborEdges, backgroundEdges } = useMemo(() => {
+    if (!activeNode) {
+      return { neighborEdges: [] as GraphEdge[], backgroundEdges: [...edges] };
+    }
 
-    const neighborhood = edges.filter(
-      (e) => e.fromId === activeNode || e.toId === activeNode
-    );
+    const neighbor: GraphEdge[] = [];
+    const bg: GraphEdge[] = [];
 
-    if (neighborhood.length <= MAX_HIGHLIGHTED_EDGES) return neighborhood;
+    for (const e of edges) {
+      if (e.fromId === activeNode || e.toId === activeNode) {
+        neighbor.push(e);
+      } else {
+        bg.push(e);
+      }
+    }
 
-    // Cap at 12 highest-weight edges
-    return [...neighborhood]
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, MAX_HIGHLIGHTED_EDGES);
+    // Cap highlighted at 12 highest-weight
+    if (neighbor.length > MAX_HIGHLIGHTED_EDGES) {
+      const sorted = [...neighbor].sort((a, b) => b.weight - a.weight);
+      return {
+        neighborEdges: sorted.slice(0, MAX_HIGHLIGHTED_EDGES),
+        backgroundEdges: [
+          ...bg,
+          ...sorted.slice(MAX_HIGHLIGHTED_EDGES),
+        ],
+      };
+    }
+
+    return { neighborEdges: neighbor, backgroundEdges: bg };
   }, [edges, activeNode]);
 
-  // When no node is active, show all edges at default opacity
-  const defaultEdges = useMemo(() => {
-    if (activeNode) return [];
-    return edges;
-  }, [edges, activeNode]);
-
-  const allVisible = activeNode ? visibleEdges : defaultEdges;
-
-  const confirmedBuckets = useMemo(
-    () => bucketByWeight(allVisible.filter((e) => e.strength === "confirmed")),
-    [allVisible]
+  // Buckets for highlighted edges (boosted thickness)
+  const highlightedConfirmed = useMemo(
+    () =>
+      bucketByWeight(
+        neighborEdges.filter((e) => e.strength === "confirmed"),
+        THICKNESS_BOOST
+      ),
+    [neighborEdges]
+  );
+  const highlightedDeclared = useMemo(
+    () =>
+      bucketByWeight(
+        neighborEdges.filter((e) => e.strength === "declared"),
+        THICKNESS_BOOST
+      ),
+    [neighborEdges]
   );
 
-  const declaredBuckets = useMemo(
-    () => bucketByWeight(allVisible.filter((e) => e.strength === "declared")),
-    [allVisible]
+  // Buckets for background edges (default or dimmed)
+  const bgOpacity = activeNode ? OPACITY_DIMMED : OPACITY_DEFAULT;
+  const bgConfirmed = useMemo(
+    () =>
+      bucketByWeight(backgroundEdges.filter((e) => e.strength === "confirmed")),
+    [backgroundEdges]
   );
+  const bgDeclared = useMemo(
+    () =>
+      bucketByWeight(backgroundEdges.filter((e) => e.strength === "declared")),
+    [backgroundEdges]
+  );
+
+  const shared = { nodeMap, posMap } as const;
 
   return (
     <>
-      {confirmedBuckets.map((bucket, i) => (
+      {/* Background / idle edges */}
+      {bgConfirmed.map((bucket, i) => (
         <EdgePass
+          {...shared}
+          dashSize={CONFIRMED_DASH_SIZE}
           edges={bucket.edges}
-          hoveredNodeId={hoveredNodeId}
-          isDashed={false}
-          key={`c-${i}`}
+          gapSize={CONFIRMED_GAP_SIZE}
+          isHighlighted={false}
+          key={`bg-c-${i}`}
           linewidth={bucket.linewidth}
-          nodeMap={nodeMap}
-          posMap={posMap}
-          selectedNodeId={selectedNodeId}
+          opacity={bgOpacity}
         />
       ))}
-      {declaredBuckets.map((bucket, i) => (
+      {bgDeclared.map((bucket, i) => (
         <EdgePass
+          {...shared}
+          dashSize={DECLARED_DASH_SIZE}
           edges={bucket.edges}
-          hoveredNodeId={hoveredNodeId}
-          isDashed
-          key={`d-${i}`}
+          gapSize={DECLARED_GAP_SIZE}
+          isHighlighted={false}
+          key={`bg-d-${i}`}
           linewidth={bucket.linewidth}
-          nodeMap={nodeMap}
-          posMap={posMap}
-          selectedNodeId={selectedNodeId}
+          opacity={bgOpacity * 0.8}
+        />
+      ))}
+
+      {/* Highlighted neighborhood edges */}
+      {highlightedConfirmed.map((bucket, i) => (
+        <EdgePass
+          {...shared}
+          dashSize={CONFIRMED_DASH_SIZE}
+          edges={bucket.edges}
+          gapSize={CONFIRMED_GAP_SIZE}
+          isHighlighted
+          key={`hl-c-${i}`}
+          linewidth={bucket.linewidth}
+          opacity={OPACITY_HIGHLIGHTED}
+        />
+      ))}
+      {highlightedDeclared.map((bucket, i) => (
+        <EdgePass
+          {...shared}
+          dashSize={DECLARED_DASH_SIZE}
+          edges={bucket.edges}
+          gapSize={DECLARED_GAP_SIZE}
+          isHighlighted
+          key={`hl-d-${i}`}
+          linewidth={bucket.linewidth}
+          opacity={OPACITY_HIGHLIGHTED * 0.7}
         />
       ))}
     </>

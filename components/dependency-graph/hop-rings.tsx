@@ -9,8 +9,8 @@ import { AdditiveBlending } from "three";
  */
 
 const HOP_RADII = [4, 8, 13, 19, 26];
-const RING_COLOR = "#0a1828";
-const RING_OPACITY = 0.2;
+const RING_COLOR = "#0e1a2e";
+const RING_OPACITY = 0.25;
 const RING_THICKNESS = 0.03;
 
 export function HopRings({ maxHops }: { readonly maxHops: number }) {

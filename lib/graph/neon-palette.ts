@@ -48,7 +48,9 @@ export function neonHex(colorKey: string): string {
   return `#${neonColorFromKey(colorKey).getHexString()}`;
 }
 
-// Scene constants
-export const NEON_BG = 0x030711;
-export const NEON_BG_CSS = "#030711";
-export const NEON_FOG = 0x030711;
+// Scene constants — Vercel/Linear-style dark base
+export const NEON_BG = 0x05070b;
+export const NEON_BG_CSS = "#05070B";
+export const NEON_BG_DEEP = 0x0b1020;
+export const NEON_BG_DEEP_CSS = "#0B1020";
+export const NEON_FOG = 0x070a12;

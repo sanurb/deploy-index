@@ -2,52 +2,87 @@
 
 import { useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { AdditiveBlending, Color, type InstancedMesh, Object3D } from "three";
+import {
+  BoxGeometry,
+  Color,
+  EdgesGeometry,
+  IcosahedronGeometry,
+  type InstancedMesh,
+  NormalBlending,
+  Object3D,
+  OctahedronGeometry,
+} from "three";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { neonColorFromKey } from "@/lib/graph/neon-palette";
 import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
-// Brightness rules — CONSERVATIVE.  Additive blending means any stacking
-// becomes a white haze.  Keep idle nodes *barely* visible and only let
-// the active neighborhood push above bloom threshold (0.75).
+// Brightness — controls per-node neon tint intensity.
+// Colors are stored as `neon * brightness` in linear space.
+// LineMaterial with toneMapped=false writes these directly to the render
+// target; the EffectComposer's ToneMapping handles the rest.
 //
-//   Focus:      0.50   — clearly dominant, will bloom subtly
-//   Hovered:    0.40   — visible glow
-//   Selected:   0.38
-//   Neighbor:   0.28   — readable but secondary
-//   Idle:       0.08   — faint constellation dust
-//   Dimmed:     0.025  — near-invisible when selection active
+//   Focus:      1.00   — full neon, triggers bloom
+//   Hovered:    0.80   — clear highlight
+//   Selected:   0.65   — strong
+//   Neighbor:   0.50   — readable secondary
+//   Idle:       0.35   — visible tint, quiet
+//   Dimmed:     0.10   — background hum when selection active
 // ---------------------------------------------------------------------------
 
-const BRIGHT_FOCUS = 0.5;
-const BRIGHT_HOVERED = 0.4;
-const BRIGHT_SELECTED = 0.38;
-const BRIGHT_NEIGHBOR = 0.28;
-const BRIGHT_IDLE = 0.08;
-const BRIGHT_DIMMED = 0.025;
+const BRIGHT_FOCUS = 1.0;
+const BRIGHT_HOVERED = 0.85;
+const BRIGHT_SELECTED = 0.9;
+const BRIGHT_NEIGHBOR = 0.5;
+const BRIGHT_IDLE = 0.35;
+const BRIGHT_DIMMED = 0.1;
 
-// Halo: only rendered for active nodes (focus/hover/selected).
-// Tight scale to avoid overlap, very low intensity.
-const HALO_SCALE = 1.08;
-const HALO_INTENSITY = 0.22;
+// Line widths (screen pixels, not world units)
+const LINE_WIDTH_IDLE = 1.5;
+const LINE_WIDTH_ACTIVE = 2.0;
+const LINE_WIDTH_FOCUS = 2.8;
 
-// Render order: halo behind core for stable compositing
-const RENDER_ORDER_HALO = 1;
-const RENDER_ORDER_CORE = 2;
+// ---------------------------------------------------------------------------
+// Edge templates — pre-computed at module level.
+// EdgesGeometry extracts only hard edges (no internal triangulation).
+// ---------------------------------------------------------------------------
 
-// Scratch objects (reused every update, never allocate in loop)
+function extractEdgeTemplate(
+  geo: BoxGeometry | IcosahedronGeometry | OctahedronGeometry
+): Float32Array {
+  const edges = new EdgesGeometry(geo, 1);
+  const arr = new Float32Array(edges.attributes.position.array);
+  edges.dispose();
+  geo.dispose();
+  return arr;
+}
+
+const EDGE_TEMPLATES: Record<string, Float32Array> = {
+  icosahedron: extractEdgeTemplate(new IcosahedronGeometry(1, 0)),
+  octahedron: extractEdgeTemplate(new OctahedronGeometry(1, 0)),
+  box: extractEdgeTemplate(new BoxGeometry(1, 1, 1)),
+};
+
+// Scratch objects
 const tmpObj = new Object3D();
 const tmpColor = new Color();
 const tmpHsl = { h: 0, s: 0, l: 0 };
-const BLACK = new Color(0x000000);
 
 // ---------------------------------------------------------------------------
 // Node scale
 // ---------------------------------------------------------------------------
 
-function nodeScale(node: GraphNode, isFocus: boolean): number {
+function nodeScale(
+  node: GraphNode,
+  isFocus: boolean,
+  isSelected: boolean
+): number {
   const base = Math.log2(node.prodInterfaceCount + 1) * 0.3 + 0.45;
-  return isFocus ? base * 1.4 : base;
+  if (isFocus) return base * 1.4;
+  if (isSelected) return base * 1.25;
+  return base;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +115,7 @@ interface NodesMeshProps {
 }
 
 // ---------------------------------------------------------------------------
-// Per-kind: core wireframe (always) + halo wireframe (active nodes only)
+// Per-kind: LineSegments2 for visible wireframe + invisible mesh for hit test
 // ---------------------------------------------------------------------------
 
 function KindMesh({
@@ -104,9 +139,10 @@ function KindMesh({
   onHover: (nodeId: string) => void;
   onClick: (nodeId: string) => void;
 }) {
-  const coreRef = useRef<InstancedMesh>(null);
-  const haloRef = useRef<InstancedMesh>(null);
-  const { invalidate } = useThree();
+  const hitRef = useRef<InstancedMesh>(null);
+  const lineRef = useRef<LineSegments2>(null);
+  const matRef = useRef<LineMaterial>(null);
+  const { invalidate, size } = useThree();
   const count = nodes.length;
 
   const nodeIndexMap = useMemo(() => {
@@ -117,10 +153,37 @@ function KindMesh({
     return map;
   }, [nodes]);
 
+  // Keep LineMaterial resolution in sync
   useEffect(() => {
-    const core = coreRef.current;
-    const halo = haloRef.current;
-    if (!core || !halo || count === 0) return;
+    if (matRef.current) {
+      matRef.current.resolution.set(size.width, size.height);
+    }
+  }, [size]);
+
+  // Determine line width — thicker when focus/selected is in this group
+  const hasFocusOrSelected = nodes.some(
+    (n) => n.nodeId === focusNodeId || n.nodeId === selectedNodeId
+  );
+  const hasActive = Boolean(selectedNodeId || hoveredNodeId);
+  const linewidth = hasFocusOrSelected
+    ? LINE_WIDTH_FOCUS
+    : hasActive
+      ? LINE_WIDTH_ACTIVE
+      : LINE_WIDTH_IDLE;
+
+  // Build line geometry + update hit mesh transforms
+  useEffect(() => {
+    const hit = hitRef.current;
+    const line = lineRef.current;
+    if (!line || count === 0) return;
+
+    const template = EDGE_TEMPLATES[geometry];
+    const verticesPerEdge = 6; // 2 endpoints * 3 coords
+    const edgesPerNode = template.length / verticesPerEdge;
+    const totalSegments = count * edgesPerNode;
+
+    const outPos = new Float32Array(totalSegments * verticesPerEdge);
+    const outCol = new Float32Array(totalSegments * verticesPerEdge);
 
     const hasSelection = Boolean(selectedNodeId);
     const activeNode = selectedNodeId || hoveredNodeId;
@@ -137,7 +200,7 @@ function KindMesh({
         activeNode &&
         (node.nodeId === activeNode || neighborhoodSet.has(node.nodeId));
 
-      // --- Brightness ---
+      // Brightness
       let brightness: number;
       if (isFocus) brightness = BRIGHT_FOCUS;
       else if (isHovered) brightness = BRIGHT_HOVERED;
@@ -146,45 +209,65 @@ function KindMesh({
       else if (hasSelection) brightness = BRIGHT_DIMMED;
       else brightness = BRIGHT_IDLE;
 
-      // Confidence penalty for non-interactive nodes
       if (!isFocus && !isHovered && !isSelected) {
         if (node.confidenceScore < 0.4) brightness *= 0.5;
         else if (node.confidenceScore < 0.7) brightness *= 0.75;
       }
 
-      const scale = nodeScale(node, isFocus);
+      const s = nodeScale(node, isFocus, isSelected);
       const neon = neonColorFromKey(node.colorKey);
-      if (!isFocus) applyConfidenceDesaturation(neon, node.confidenceScore);
-
-      // --- Core wireframe ---
-      tmpObj.position.set(pos.x, pos.y, pos.z);
-      tmpObj.scale.setScalar(scale);
-      tmpObj.updateMatrix();
-      core.setMatrixAt(i, tmpObj.matrix);
+      if (!isFocus && !isSelected) applyConfidenceDesaturation(neon, node.confidenceScore);
       tmpColor.copy(neon).multiplyScalar(brightness);
-      core.setColorAt(i, tmpColor);
 
-      // --- Halo: ONLY for focus / hovered / selected — black (invisible) otherwise ---
-      const isActive = isFocus || isHovered || isSelected;
-      if (isActive) {
-        tmpObj.scale.setScalar(scale * HALO_SCALE);
+      // Update hit mesh transform
+      if (hit) {
+        tmpObj.position.set(pos.x, pos.y, pos.z);
+        tmpObj.scale.setScalar(s);
         tmpObj.updateMatrix();
-        halo.setMatrixAt(i, tmpObj.matrix);
-        tmpColor.copy(neon).multiplyScalar(brightness * HALO_INTENSITY);
-        halo.setColorAt(i, tmpColor);
-      } else {
-        // Collapse to zero and paint black — zero additive contribution
-        tmpObj.scale.setScalar(0);
-        tmpObj.updateMatrix();
-        halo.setMatrixAt(i, tmpObj.matrix);
-        halo.setColorAt(i, BLACK);
+        hit.setMatrixAt(i, tmpObj.matrix);
+      }
+
+      // Write edge segments: scale template vertices + translate to position
+      const baseOff = i * edgesPerNode * verticesPerEdge;
+      for (let e = 0; e < edgesPerNode; e++) {
+        const src = e * verticesPerEdge;
+        const dst = baseOff + src;
+
+        // Endpoint A
+        outPos[dst + 0] = template[src + 0] * s + pos.x;
+        outPos[dst + 1] = template[src + 1] * s + pos.y;
+        outPos[dst + 2] = template[src + 2] * s + pos.z;
+        // Endpoint B
+        outPos[dst + 3] = template[src + 3] * s + pos.x;
+        outPos[dst + 4] = template[src + 4] * s + pos.y;
+        outPos[dst + 5] = template[src + 5] * s + pos.z;
+
+        // Color for both endpoints
+        outCol[dst + 0] = tmpColor.r;
+        outCol[dst + 1] = tmpColor.g;
+        outCol[dst + 2] = tmpColor.b;
+        outCol[dst + 3] = tmpColor.r;
+        outCol[dst + 4] = tmpColor.g;
+        outCol[dst + 5] = tmpColor.b;
       }
     }
 
-    core.instanceMatrix.needsUpdate = true;
-    if (core.instanceColor) core.instanceColor.needsUpdate = true;
-    halo.instanceMatrix.needsUpdate = true;
-    if (halo.instanceColor) halo.instanceColor.needsUpdate = true;
+    if (hit) {
+      hit.instanceMatrix.needsUpdate = true;
+    }
+
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(outPos);
+    geo.setColors(outCol);
+
+    line.geometry.dispose();
+    line.geometry = geo;
+    line.computeLineDistances();
+
+    if (matRef.current) {
+      matRef.current.linewidth = linewidth;
+    }
+
     invalidate();
   }, [
     nodes,
@@ -194,6 +277,8 @@ function KindMesh({
     hoveredNodeId,
     neighborhoodSet,
     count,
+    geometry,
+    linewidth,
     invalidate,
   ]);
 
@@ -225,9 +310,9 @@ function KindMesh({
 
   if (count === 0) return null;
 
-  const geometryElement =
+  const solidGeometry =
     geometry === "icosahedron" ? (
-      <icosahedronGeometry args={[1, 1]} />
+      <icosahedronGeometry args={[1, 0]} />
     ) : geometry === "octahedron" ? (
       <octahedronGeometry args={[1, 0]} />
     ) : (
@@ -236,42 +321,44 @@ function KindMesh({
 
   return (
     <group>
-      {/* Halo — only visible for active nodes, tight scale */}
-      <instancedMesh
-        args={[undefined, undefined, count]}
-        ref={haloRef}
-        renderOrder={RENDER_ORDER_HALO}
-      >
-        {geometryElement}
-        <meshBasicMaterial
-          blending={AdditiveBlending}
-          depthWrite={false}
-          toneMapped={false}
-          transparent
-          vertexColors
-          wireframe
-        />
-      </instancedMesh>
-
-      {/* Core wireframe — crisp thin outlines, interactive */}
+      {/* Hit-detection mesh — invisible, receives pointer events */}
       <instancedMesh
         args={[undefined, undefined, count]}
         onClick={handleClick}
         onPointerOut={handlePointerOut}
         onPointerOver={handlePointerOver}
-        ref={coreRef}
-        renderOrder={RENDER_ORDER_CORE}
+        ref={hitRef}
+        renderOrder={0}
       >
-        {geometryElement}
+        {solidGeometry}
         <meshBasicMaterial
-          blending={AdditiveBlending}
+          colorWrite={false}
           depthWrite={false}
-          toneMapped={false}
           transparent
-          vertexColors
-          wireframe
+          opacity={0}
         />
       </instancedMesh>
+
+      {/* Visible wireframe — LineSegments2 with controllable thickness */}
+      <primitive object={new LineSegments2()} ref={lineRef} renderOrder={2}>
+        <primitive
+          attach="material"
+          object={
+            new LineMaterial({
+              vertexColors: true,
+              linewidth,
+              transparent: true,
+              opacity: 1.0,
+              worldUnits: false,
+              blending: NormalBlending,
+              depthWrite: false,
+              toneMapped: false,
+              resolution: [size.width, size.height],
+            } as ConstructorParameters<typeof LineMaterial>[0])
+          }
+          ref={matRef}
+        />
+      </primitive>
     </group>
   );
 }

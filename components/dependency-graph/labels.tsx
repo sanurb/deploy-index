@@ -2,7 +2,6 @@
 
 import { Billboard, Text } from "@react-three/drei";
 import { useMemo } from "react";
-import { NEON_BG_CSS } from "@/lib/graph/neon-palette";
 import type { GraphNode, NodePosition } from "@/types/graph";
 
 /**
@@ -125,8 +124,8 @@ export function Labels({
               color={color}
               fontSize={fontSize}
               maxWidth={6}
-              outlineColor={NEON_BG_CSS}
-              outlineWidth={0.05}
+              outlineColor="#080C14"
+              outlineWidth={0.04}
             >
               {label}
             </Text>
