@@ -1,7 +1,7 @@
 "use client";
 
 import { Html } from "@react-three/drei";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { neonHex } from "@/lib/graph/neon-palette";
 import type { GraphNode, NodePosition } from "@/types/graph";
 
@@ -11,7 +11,7 @@ interface HoverTooltipProps {
   readonly hoveredNodeId: string;
 }
 
-export function HoverTooltip({
+export const HoverTooltip = memo(function HoverTooltip({
   nodes,
   positions,
   hoveredNodeId,
@@ -98,4 +98,4 @@ export function HoverTooltip({
       </div>
     </Html>
   );
-}
+});

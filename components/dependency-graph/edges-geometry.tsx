@@ -11,30 +11,28 @@ import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
 // Opacity tiers
-//   Default:     idle edges, subtle but visible
-//   Highlighted: neighborhood of active node
-//   Dimmed:      non-neighborhood when a node is active (~20%)
 // ---------------------------------------------------------------------------
 
-const OPACITY_DEFAULT = 0.25;
-const OPACITY_HIGHLIGHTED = 0.55;
-const OPACITY_DIMMED = 0.05;
+const OPACITY_DEFAULT = 0.38;
+const OPACITY_HIGHLIGHTED = 0.52;
+const OPACITY_DIMMED = 0.2;
 
 const MAX_HIGHLIGHTED_EDGES = 12;
 
 // Thickness
-const THICKNESS_MIN = 0.8;
-const THICKNESS_MAX = 1.4;
-const THICKNESS_BOOST = 0.4; // added to highlighted edges
+const THICKNESS_MIN = 0.6;
+const THICKNESS_MAX = 1.2;
+const THICKNESS_BOOST = 0.3;
 
-// Dash animation — slow, calm directional flow
-const DASH_SPEED = 0.12; // units per second
+// Luminance gradient — source end brighter, destination end dimmer
+const DEST_DIM_FACTOR = 0.7;
 
-// Confirmed edges: near-solid with subtle breaks
+// Dash animation — only on highlighted edges
+const DASH_SPEED = 0.10;
+
+// Highlighted edges: near-solid with subtle breaks
 const CONFIRMED_DASH_SIZE = 3.0;
-const CONFIRMED_GAP_SIZE = 0.3;
-
-// Declared edges: clearly dashed
+const CONFIRMED_GAP_SIZE = 0.25;
 const DECLARED_DASH_SIZE = 0.6;
 const DECLARED_GAP_SIZE = 0.4;
 
@@ -47,7 +45,7 @@ function weightToThickness(weight: number): number {
 // Cubic Bezier
 // ---------------------------------------------------------------------------
 
-const SAMPLES_PER_CURVE = 16;
+const SAMPLES_PER_CURVE = 20;
 
 function cubicBezier(
   p0: Vector3,
@@ -69,7 +67,7 @@ function cubicBezier(
 }
 
 // ---------------------------------------------------------------------------
-// Control points — arcs flow outward from center
+// Control points — arcs flow outward from center with spread
 // ---------------------------------------------------------------------------
 
 const _origin = new Vector3(0, 0, 0);
@@ -97,22 +95,22 @@ function computeControlPoints(
 
   _perp.subVectors(to, from).cross(_up).normalize();
 
-  const arcMag = Math.min(dist * 0.25, 4.0);
-  const yLift = dist * 0.08;
+  const arcMag = Math.min(dist * 0.28, 4.5);
+  const yLift = dist * 0.10;
 
-  cp1.lerpVectors(from, to, 0.33);
-  cp1.addScaledVector(_dir, arcMag * 0.6);
-  cp1.addScaledVector(_perp, arcMag * 0.15);
+  cp1.lerpVectors(from, to, 0.30);
+  cp1.addScaledVector(_dir, arcMag * 0.55);
+  cp1.addScaledVector(_perp, arcMag * 0.22);
   cp1.y += yLift;
 
-  cp2.lerpVectors(from, to, 0.67);
-  cp2.addScaledVector(_dir, arcMag * 0.6);
-  cp2.addScaledVector(_perp, -arcMag * 0.15);
+  cp2.lerpVectors(from, to, 0.70);
+  cp2.addScaledVector(_dir, arcMag * 0.55);
+  cp2.addScaledVector(_perp, -arcMag * 0.22);
   cp2.y += yLift;
 }
 
 // ---------------------------------------------------------------------------
-// Build curve segments
+// Build curve segments with luminance gradient
 // ---------------------------------------------------------------------------
 
 interface CurveData {
@@ -120,6 +118,8 @@ interface CurveData {
   colors: Float32Array;
   segmentCount: number;
 }
+
+const tmpHsl = { h: 0, s: 0, l: 0 };
 
 function buildCurveData(
   edges: readonly GraphEdge[],
@@ -138,7 +138,8 @@ function buildCurveData(
   const cp2 = new Vector3();
   const prev = new Vector3();
   const curr = new Vector3();
-  const tmpColor = new Color();
+  const srcColor = new Color();
+  const segColor = new Color();
 
   let segIdx = 0;
 
@@ -153,21 +154,24 @@ function buildCurveData(
 
     const sourceNode = nodeMap.get(edge.fromId);
     const neon = neonColorFromKey(sourceNode?.colorKey ?? "");
-
-    const hsl = { h: 0, s: 0, l: 0 };
-    neon.getHSL(hsl);
+    neon.getHSL(tmpHsl);
 
     if (isHighlighted) {
-      tmpColor.setHSL(hsl.h, hsl.s * 0.7, hsl.l * 0.85);
+      srcColor.setHSL(tmpHsl.h, tmpHsl.s * 0.72, tmpHsl.l * 0.84);
     } else {
-      tmpColor.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.7);
+      srcColor.setHSL(tmpHsl.h, tmpHsl.s * 0.62, tmpHsl.l * 0.74);
     }
 
     cubicBezier(p0, cp1, cp2, p3, 0, prev);
+    let prevT = 0;
 
     for (let s = 1; s < SAMPLES_PER_CURVE; s++) {
       const t = s / (SAMPLES_PER_CURVE - 1);
       cubicBezier(p0, cp1, cp2, p3, t, curr);
+
+      // Luminance gradient: interpolate brightness from source to destination
+      const prevDim = 1 - prevT * (1 - DEST_DIM_FACTOR);
+      const currDim = 1 - t * (1 - DEST_DIM_FACTOR);
 
       const off = segIdx * 6;
       positions[off] = prev.x;
@@ -177,14 +181,20 @@ function buildCurveData(
       positions[off + 4] = curr.y;
       positions[off + 5] = curr.z;
 
-      colors[off] = tmpColor.r;
-      colors[off + 1] = tmpColor.g;
-      colors[off + 2] = tmpColor.b;
-      colors[off + 3] = tmpColor.r;
-      colors[off + 4] = tmpColor.g;
-      colors[off + 5] = tmpColor.b;
+      // Source-end vertex color
+      segColor.copy(srcColor).multiplyScalar(prevDim);
+      colors[off] = segColor.r;
+      colors[off + 1] = segColor.g;
+      colors[off + 2] = segColor.b;
+
+      // Destination-end vertex color (dimmer)
+      segColor.copy(srcColor).multiplyScalar(currDim);
+      colors[off + 3] = segColor.r;
+      colors[off + 4] = segColor.g;
+      colors[off + 5] = segColor.b;
 
       prev.copy(curr);
+      prevT = t;
       segIdx++;
     }
   }
@@ -239,14 +249,102 @@ function bucketByWeight(
 }
 
 // ---------------------------------------------------------------------------
-// Edge pass — dashed, animated dashOffset via useFrame
+// Solid edge pass — idle edges, no dashing, no animation
 // ---------------------------------------------------------------------------
 
-function EdgePass({
+function SolidEdgePass({
   edges,
   nodeMap,
   posMap,
-  isHighlighted,
+  linewidth,
+  opacity,
+}: {
+  edges: readonly GraphEdge[];
+  nodeMap: Map<string, GraphNode>;
+  posMap: Map<string, NodePosition>;
+  linewidth: number;
+  opacity: number;
+}) {
+  const lineRef = useRef<LineSegments2>(null);
+  const matRef = useRef<LineMaterial>(null);
+  const { size } = useThree();
+  const lineObject = useMemo(() => new LineSegments2(), []);
+  const lineMaterial = useMemo(
+    () =>
+      new LineMaterial({
+        vertexColors: true,
+        linewidth: THICKNESS_MIN,
+        transparent: true,
+        opacity: OPACITY_DEFAULT,
+        dashed: false,
+        worldUnits: false,
+        blending: NormalBlending,
+        depthWrite: false,
+        toneMapped: false,
+        resolution: [1, 1],
+      } as ConstructorParameters<typeof LineMaterial>[0]),
+    []
+  );
+
+  useEffect(() => {
+    if (!lineRef.current || !matRef.current || edges.length === 0) return;
+
+    const { positions, colors, segmentCount } = buildCurveData(
+      edges,
+      nodeMap,
+      posMap,
+      false
+    );
+
+    if (segmentCount === 0) return;
+
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(positions);
+    geo.setColors(colors);
+
+    lineRef.current.geometry.dispose();
+    lineRef.current.geometry = geo;
+
+    if (matRef.current) {
+      matRef.current.opacity = opacity;
+      matRef.current.linewidth = linewidth;
+    }
+  }, [edges, nodeMap, posMap, opacity, linewidth]);
+
+  useEffect(() => {
+    if (matRef.current) {
+      matRef.current.resolution.set(size.width, size.height);
+    }
+  }, [size]);
+
+  useEffect(() => {
+    return () => {
+      lineObject.geometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineObject, lineMaterial]);
+
+  if (edges.length === 0) return null;
+
+  return (
+    <primitive object={lineObject} ref={lineRef}>
+      <primitive
+        attach="material"
+        object={lineMaterial}
+        ref={matRef}
+      />
+    </primitive>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashed edge pass — highlighted edges, animated dashOffset via useFrame
+// ---------------------------------------------------------------------------
+
+function DashedEdgePass({
+  edges,
+  nodeMap,
+  posMap,
   dashSize,
   gapSize,
   linewidth,
@@ -255,7 +353,6 @@ function EdgePass({
   edges: readonly GraphEdge[];
   nodeMap: Map<string, GraphNode>;
   posMap: Map<string, NodePosition>;
-  isHighlighted: boolean;
   dashSize: number;
   gapSize: number;
   linewidth: number;
@@ -264,8 +361,28 @@ function EdgePass({
   const lineRef = useRef<LineSegments2>(null);
   const matRef = useRef<LineMaterial>(null);
   const { size } = useThree();
+  const lineObject = useMemo(() => new LineSegments2(), []);
+  const lineMaterial = useMemo(
+    () =>
+      new LineMaterial({
+        vertexColors: true,
+        linewidth: THICKNESS_MIN + THICKNESS_BOOST,
+        transparent: true,
+        opacity: OPACITY_HIGHLIGHTED,
+        dashed: true,
+        dashScale: 1,
+        dashSize,
+        gapSize,
+        dashOffset: 0,
+        worldUnits: false,
+        blending: NormalBlending,
+        depthWrite: false,
+        toneMapped: false,
+        resolution: [1, 1],
+      } as ConstructorParameters<typeof LineMaterial>[0]),
+    [dashSize, gapSize]
+  );
 
-  // Build geometry when edges or interaction state change
   useEffect(() => {
     if (!lineRef.current || !matRef.current || edges.length === 0) return;
 
@@ -273,7 +390,7 @@ function EdgePass({
       edges,
       nodeMap,
       posMap,
-      isHighlighted
+      true
     );
 
     if (segmentCount === 0) return;
@@ -290,16 +407,22 @@ function EdgePass({
       matRef.current.opacity = opacity;
       matRef.current.linewidth = linewidth;
     }
-  }, [edges, nodeMap, posMap, isHighlighted, opacity, linewidth]);
+  }, [edges, nodeMap, posMap, opacity, linewidth]);
 
-  // Resolution sync
   useEffect(() => {
     if (matRef.current) {
       matRef.current.resolution.set(size.width, size.height);
     }
   }, [size]);
 
-  // Animate dashOffset — purely in material space, no React state
+  useEffect(() => {
+    return () => {
+      lineObject.geometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineObject, lineMaterial]);
+
+  // Animate dashOffset — only on highlighted edges
   useFrame((_, delta) => {
     if (matRef.current) {
       matRef.current.dashOffset -= delta * DASH_SPEED;
@@ -309,27 +432,10 @@ function EdgePass({
   if (edges.length === 0) return null;
 
   return (
-    <primitive object={new LineSegments2()} ref={lineRef}>
+    <primitive object={lineObject} ref={lineRef}>
       <primitive
         attach="material"
-        object={
-          new LineMaterial({
-            vertexColors: true,
-            linewidth,
-            transparent: true,
-            opacity,
-            dashed: true,
-            dashScale: 1,
-            dashSize,
-            gapSize,
-            dashOffset: 0,
-            worldUnits: false,
-            blending: NormalBlending,
-            depthWrite: false,
-            toneMapped: false,
-            resolution: [size.width, size.height],
-          } as ConstructorParameters<typeof LineMaterial>[0])
-        }
+        object={lineMaterial}
         ref={matRef}
       />
     </primitive>
@@ -405,7 +511,7 @@ export function EdgesGeometry({
     return { neighborEdges: neighbor, backgroundEdges: bg };
   }, [edges, activeNode]);
 
-  // Buckets for highlighted edges (boosted thickness)
+  // Highlighted edges — dashed with animation, boosted thickness
   const highlightedConfirmed = useMemo(
     () =>
       bucketByWeight(
@@ -423,16 +529,10 @@ export function EdgesGeometry({
     [neighborEdges]
   );
 
-  // Buckets for background edges (default or dimmed)
+  // Background edges — solid, no animation
   const bgOpacity = activeNode ? OPACITY_DIMMED : OPACITY_DEFAULT;
-  const bgConfirmed = useMemo(
-    () =>
-      bucketByWeight(backgroundEdges.filter((e) => e.strength === "confirmed")),
-    [backgroundEdges]
-  );
-  const bgDeclared = useMemo(
-    () =>
-      bucketByWeight(backgroundEdges.filter((e) => e.strength === "declared")),
+  const bgBuckets = useMemo(
+    () => bucketByWeight(backgroundEdges),
     [backgroundEdges]
   );
 
@@ -440,52 +540,35 @@ export function EdgesGeometry({
 
   return (
     <>
-      {/* Background / idle edges */}
-      {bgConfirmed.map((bucket, i) => (
-        <EdgePass
+      {/* Background / idle edges — solid, no dash, no animation */}
+      {bgBuckets.map((bucket, i) => (
+        <SolidEdgePass
           {...shared}
-          dashSize={CONFIRMED_DASH_SIZE}
           edges={bucket.edges}
-          gapSize={CONFIRMED_GAP_SIZE}
-          isHighlighted={false}
-          key={`bg-c-${i}`}
+          key={`bg-${i}`}
           linewidth={bucket.linewidth}
           opacity={bgOpacity}
         />
       ))}
-      {bgDeclared.map((bucket, i) => (
-        <EdgePass
-          {...shared}
-          dashSize={DECLARED_DASH_SIZE}
-          edges={bucket.edges}
-          gapSize={DECLARED_GAP_SIZE}
-          isHighlighted={false}
-          key={`bg-d-${i}`}
-          linewidth={bucket.linewidth}
-          opacity={bgOpacity * 0.8}
-        />
-      ))}
 
-      {/* Highlighted neighborhood edges */}
+      {/* Highlighted neighborhood edges — dashed with slow animation */}
       {highlightedConfirmed.map((bucket, i) => (
-        <EdgePass
+        <DashedEdgePass
           {...shared}
           dashSize={CONFIRMED_DASH_SIZE}
           edges={bucket.edges}
           gapSize={CONFIRMED_GAP_SIZE}
-          isHighlighted
           key={`hl-c-${i}`}
           linewidth={bucket.linewidth}
           opacity={OPACITY_HIGHLIGHTED}
         />
       ))}
       {highlightedDeclared.map((bucket, i) => (
-        <EdgePass
+        <DashedEdgePass
           {...shared}
           dashSize={DECLARED_DASH_SIZE}
           edges={bucket.edges}
           gapSize={DECLARED_GAP_SIZE}
-          isHighlighted
           key={`hl-d-${i}`}
           linewidth={bucket.linewidth}
           opacity={OPACITY_HIGHLIGHTED * 0.7}

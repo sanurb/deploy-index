@@ -33,9 +33,16 @@ const RING_RADII = [0, 4, 8, 13, 19, 26];
 // ---------------------------------------------------------------------------
 
 function envYOffset(node: GraphNode): number {
-  if (node.envPresence.production) return 1.5;
-  if (node.envPresence.staging) return 0;
-  return -1.5;
+  // Kind-based Y layers create depth separation under fog
+  const kindLayer =
+    node.kind === "software" ? 1.0 : node.kind === "dependency" ? -0.5 : -1.8;
+  // Env shifts within the layer
+  const envShift = node.envPresence.production
+    ? 0.6
+    : node.envPresence.staging
+      ? 0
+      : -0.6;
+  return kindLayer + envShift;
 }
 
 // ---------------------------------------------------------------------------

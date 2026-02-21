@@ -19,30 +19,29 @@ import { neonColorFromKey } from "@/lib/graph/neon-palette";
 import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
-// Brightness — controls per-node neon tint intensity.
-// Colors are stored as `neon * brightness` in linear space.
-// LineMaterial with toneMapped=false writes these directly to the render
-// target; the EffectComposer's ToneMapping handles the rest.
+// Brightness — controlled emissive range with visible idle floor.
+// Interaction remains emphasis, not binary visibility.
 //
-//   Focus:      1.00   — full neon, triggers bloom
-//   Hovered:    0.80   — clear highlight
-//   Selected:   0.65   — strong
-//   Neighbor:   0.50   — readable secondary
-//   Idle:       0.35   — visible tint, quiet
-//   Dimmed:     0.10   — background hum when selection active
+//   Focus:      0.68   — peak, subtle bloom potential
+//   Selected:   0.62   — clear emphasis
+//   Hovered:    0.58   — light emphasis
+//   Neighbor:   0.50   — context remains legible
+//   Idle:       0.44   — always readable
+//   Dimmed:     0.34   — de-emphasized, never "off"
 // ---------------------------------------------------------------------------
 
-const BRIGHT_FOCUS = 1.0;
-const BRIGHT_HOVERED = 0.85;
-const BRIGHT_SELECTED = 0.9;
+const BRIGHT_FOCUS = 0.68;
+const BRIGHT_HOVERED = 0.58;
+const BRIGHT_SELECTED = 0.62;
 const BRIGHT_NEIGHBOR = 0.5;
-const BRIGHT_IDLE = 0.35;
-const BRIGHT_DIMMED = 0.1;
+const BRIGHT_IDLE = 0.44;
+const BRIGHT_DIMMED = 0.34;
+const BRIGHT_IDLE_FLOOR = 0.34;
 
 // Line widths (screen pixels, not world units)
-const LINE_WIDTH_IDLE = 1.5;
-const LINE_WIDTH_ACTIVE = 2.0;
-const LINE_WIDTH_FOCUS = 2.8;
+const LINE_WIDTH_IDLE = 1.4;
+const LINE_WIDTH_ACTIVE = 1.8;
+const LINE_WIDTH_FOCUS = 2.2;
 
 // ---------------------------------------------------------------------------
 // Edge templates — pre-computed at module level.
@@ -99,6 +98,14 @@ function applyConfidenceDesaturation(color: Color, score: number): void {
   }
 }
 
+/** Desaturate and dim based on distance from origin (hop-correlated). */
+function applyDepthDesaturation(color: Color, distFromOrigin: number): void {
+  if (distFromOrigin < 5) return;
+  const t = Math.min((distFromOrigin - 5) / 25, 1);
+  color.getHSL(tmpHsl);
+  color.setHSL(tmpHsl.h, tmpHsl.s * (1 - t * 0.3), tmpHsl.l * (1 - t * 0.12));
+}
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -144,6 +151,22 @@ function KindMesh({
   const matRef = useRef<LineMaterial>(null);
   const { invalidate, size } = useThree();
   const count = nodes.length;
+  const lineObject = useMemo(() => new LineSegments2(), []);
+  const lineMaterial = useMemo(
+    () =>
+      new LineMaterial({
+        vertexColors: true,
+        linewidth: LINE_WIDTH_IDLE,
+        transparent: true,
+        opacity: 1.0,
+        worldUnits: false,
+        blending: NormalBlending,
+        depthWrite: false,
+        toneMapped: false,
+        resolution: [1, 1],
+      } as ConstructorParameters<typeof LineMaterial>[0]),
+    []
+  );
 
   const nodeIndexMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -159,6 +182,14 @@ function KindMesh({
       matRef.current.resolution.set(size.width, size.height);
     }
   }, [size]);
+
+  // Dispose stable custom three.js objects on unmount.
+  useEffect(() => {
+    return () => {
+      lineObject.geometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineObject, lineMaterial]);
 
   // Determine line width — thicker when focus/selected is in this group
   const hasFocusOrSelected = nodes.some(
@@ -210,13 +241,17 @@ function KindMesh({
       else brightness = BRIGHT_IDLE;
 
       if (!isFocus && !isHovered && !isSelected) {
-        if (node.confidenceScore < 0.4) brightness *= 0.5;
-        else if (node.confidenceScore < 0.7) brightness *= 0.75;
+        if (node.confidenceScore < 0.4) brightness *= 0.8;
+        else if (node.confidenceScore < 0.7) brightness *= 0.9;
+        const floor = hasSelection ? BRIGHT_DIMMED : BRIGHT_IDLE_FLOOR;
+        brightness = Math.max(brightness, floor);
       }
 
       const s = nodeScale(node, isFocus, isSelected);
       const neon = neonColorFromKey(node.colorKey);
       if (!isFocus && !isSelected) applyConfidenceDesaturation(neon, node.confidenceScore);
+      const distFromOrigin = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+      if (!isFocus && !isSelected && !isHovered) applyDepthDesaturation(neon, distFromOrigin);
       tmpColor.copy(neon).multiplyScalar(brightness);
 
       // Update hit mesh transform
@@ -340,22 +375,10 @@ function KindMesh({
       </instancedMesh>
 
       {/* Visible wireframe — LineSegments2 with controllable thickness */}
-      <primitive object={new LineSegments2()} ref={lineRef} renderOrder={2}>
+      <primitive object={lineObject} ref={lineRef} renderOrder={2}>
         <primitive
           attach="material"
-          object={
-            new LineMaterial({
-              vertexColors: true,
-              linewidth,
-              transparent: true,
-              opacity: 1.0,
-              worldUnits: false,
-              blending: NormalBlending,
-              depthWrite: false,
-              toneMapped: false,
-              resolution: [size.width, size.height],
-            } as ConstructorParameters<typeof LineMaterial>[0])
-          }
+          object={lineMaterial}
           ref={matRef}
         />
       </primitive>

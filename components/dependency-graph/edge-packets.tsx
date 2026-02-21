@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { memo, useMemo, useRef } from "react";
 import { AdditiveBlending, BufferAttribute, type Points, Vector3 } from "three";
 import type { GraphEdge, NodePosition } from "@/types/graph";
 
@@ -14,10 +14,10 @@ import type { GraphEdge, NodePosition } from "@/types/graph";
  * All animation in useFrame via buffer mutation, no React state.
  */
 
-const MAX_PACKETS_PER_EDGE = 2;
-const PACKET_SPEED = 0.2;
-const PACKET_SIZE = 1.2;
-const PACKET_OPACITY = 0.45;
+const MAX_PACKETS_PER_EDGE = 1;
+const PACKET_SPEED = 0.10;
+const PACKET_SIZE = 1.0;
+const PACKET_OPACITY = 0.30;
 
 function cubicBezier(
   p0: Vector3,
@@ -43,6 +43,7 @@ const _mid = new Vector3();
 const _dir = new Vector3();
 const _up = new Vector3(0, 1, 0);
 const _perp = new Vector3();
+const _packetTmp = new Vector3();
 
 function computeControlPoints(
   from: Vector3,
@@ -80,7 +81,7 @@ interface EdgePacketsProps {
   readonly selectedNodeId: string;
 }
 
-export function EdgePackets({
+export const EdgePackets = memo(function EdgePackets({
   edges,
   positions,
   selectedNodeId,
@@ -130,16 +131,14 @@ export function EdgePackets({
     const posAttr = pointsRef.current.geometry.getAttribute(
       "position"
     ) as BufferAttribute;
-    const tmp = new Vector3();
-
     for (let i = 0; i < curves.length; i++) {
       const { p0, cp1, cp2, p3 } = curves[i];
 
       for (let p = 0; p < MAX_PACKETS_PER_EDGE; p++) {
         const t = (tRef.current + p / MAX_PACKETS_PER_EDGE) % 1;
-        cubicBezier(p0, cp1, cp2, p3, t, tmp);
+        cubicBezier(p0, cp1, cp2, p3, t, _packetTmp);
         const idx = i * MAX_PACKETS_PER_EDGE + p;
-        posAttr.setXYZ(idx, tmp.x, tmp.y, tmp.z);
+        posAttr.setXYZ(idx, _packetTmp.x, _packetTmp.y, _packetTmp.z);
       }
     }
 
@@ -172,4 +171,4 @@ export function EdgePackets({
       />
     </points>
   );
-}
+});

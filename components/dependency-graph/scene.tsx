@@ -9,7 +9,7 @@ import {
 } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import type { ReactNode } from "react";
-import { Color as ThreeColor } from "three";
+import { Color as ThreeColor, FogExp2 } from "three";
 import { NEON_BG_CSS, NEON_FOG } from "@/lib/graph/neon-palette";
 
 /**
@@ -27,6 +27,7 @@ interface SceneProps {
 }
 
 const SCENE_BG = new ThreeColor(NEON_BG_CSS);
+const SCENE_FOG = new FogExp2(NEON_FOG, 0.022);
 
 export function Scene({
   children,
@@ -43,18 +44,18 @@ export function Scene({
       style={{ background: NEON_BG_CSS }}
     >
       <ambientLight intensity={0.05} />
-      <fog args={[NEON_FOG, 45, 90]} attach="fog" />
+      <primitive attach="fog" object={SCENE_FOG} />
 
       {children}
 
       {enablePostprocessing ? (
         <EffectComposer>
           <Bloom
-            intensity={0.3}
-            luminanceSmoothing={0.3}
-            luminanceThreshold={0.55}
+            intensity={0.18}
+            luminanceSmoothing={0.25}
+            luminanceThreshold={0.7}
             mipmapBlur
-            radius={0.35}
+            radius={0.25}
           />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           <Vignette darkness={0.45} offset={0.3} />

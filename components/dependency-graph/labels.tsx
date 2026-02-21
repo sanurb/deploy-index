@@ -1,7 +1,7 @@
 "use client";
 
 import { Billboard, Text } from "@react-three/drei";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { GraphNode, NodePosition } from "@/types/graph";
 
 /**
@@ -50,7 +50,7 @@ function labelColor(
   return TEXT_NORMAL;
 }
 
-export function Labels({
+export const Labels = memo(function Labels({
   nodes,
   positions,
   focusNodeId,
@@ -134,4 +134,4 @@ export function Labels({
       })}
     </>
   );
-}
+});
