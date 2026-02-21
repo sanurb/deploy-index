@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { Color, NormalBlending, Vector3 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
@@ -28,7 +28,7 @@ const THICKNESS_BOOST = 0.3;
 const DEST_DIM_FACTOR = 0.7;
 
 // Dash animation — only on highlighted edges
-const DASH_SPEED = 0.10;
+const DASH_SPEED = 0.1;
 
 // Highlighted edges: near-solid with subtle breaks
 const CONFIRMED_DASH_SIZE = 3.0;
@@ -96,14 +96,14 @@ function computeControlPoints(
   _perp.subVectors(to, from).cross(_up).normalize();
 
   const arcMag = Math.min(dist * 0.28, 4.5);
-  const yLift = dist * 0.10;
+  const yLift = dist * 0.1;
 
-  cp1.lerpVectors(from, to, 0.30);
+  cp1.lerpVectors(from, to, 0.3);
   cp1.addScaledVector(_dir, arcMag * 0.55);
   cp1.addScaledVector(_perp, arcMag * 0.22);
   cp1.y += yLift;
 
-  cp2.lerpVectors(from, to, 0.70);
+  cp2.lerpVectors(from, to, 0.7);
   cp2.addScaledVector(_dir, arcMag * 0.55);
   cp2.addScaledVector(_perp, -arcMag * 0.22);
   cp2.y += yLift;
@@ -169,7 +169,6 @@ function buildCurveData(
       const t = s / (SAMPLES_PER_CURVE - 1);
       cubicBezier(p0, cp1, cp2, p3, t, curr);
 
-      // Luminance gradient: interpolate brightness from source to destination
       const prevDim = 1 - prevT * (1 - DEST_DIM_FACTOR);
       const currDim = 1 - t * (1 - DEST_DIM_FACTOR);
 
@@ -181,13 +180,11 @@ function buildCurveData(
       positions[off + 4] = curr.y;
       positions[off + 5] = curr.z;
 
-      // Source-end vertex color
       segColor.copy(srcColor).multiplyScalar(prevDim);
       colors[off] = segColor.r;
       colors[off + 1] = segColor.g;
       colors[off + 2] = segColor.b;
 
-      // Destination-end vertex color (dimmer)
       segColor.copy(srcColor).multiplyScalar(currDim);
       colors[off + 3] = segColor.r;
       colors[off + 4] = segColor.g;
@@ -252,7 +249,7 @@ function bucketByWeight(
 // Solid edge pass — idle edges, no dashing, no animation
 // ---------------------------------------------------------------------------
 
-function SolidEdgePass({
+const SolidEdgePass = memo(function SolidEdgePass({
   edges,
   nodeMap,
   posMap,
@@ -265,29 +262,39 @@ function SolidEdgePass({
   linewidth: number;
   opacity: number;
 }) {
-  const lineRef = useRef<LineSegments2>(null);
-  const matRef = useRef<LineMaterial>(null);
   const { size } = useThree();
-  const lineObject = useMemo(() => new LineSegments2(), []);
+
+  const lineSegments = useMemo(() => new LineSegments2(), []);
+  const lineGeometry = useMemo(() => new LineSegmentsGeometry(), []);
   const lineMaterial = useMemo(
     () =>
       new LineMaterial({
         vertexColors: true,
-        linewidth: THICKNESS_MIN,
+        linewidth,
         transparent: true,
-        opacity: OPACITY_DEFAULT,
+        opacity,
         dashed: false,
         worldUnits: false,
         blending: NormalBlending,
         depthWrite: false,
         toneMapped: false,
-        resolution: [1, 1],
       } as ConstructorParameters<typeof LineMaterial>[0]),
     []
   );
 
+  // Attach geometry + material on mount, dispose on unmount
   useEffect(() => {
-    if (!lineRef.current || !matRef.current || edges.length === 0) return;
+    lineSegments.geometry = lineGeometry;
+    lineSegments.material = lineMaterial;
+    return () => {
+      lineGeometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineSegments, lineMaterial, lineGeometry]);
+
+  // Update geometry data when edges change — mutate in place
+  useEffect(() => {
+    if (edges.length === 0) return;
 
     const { positions, colors, segmentCount } = buildCurveData(
       edges,
@@ -298,50 +305,31 @@ function SolidEdgePass({
 
     if (segmentCount === 0) return;
 
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(positions);
-    geo.setColors(colors);
+    lineGeometry.setPositions(positions);
+    lineGeometry.setColors(colors);
+  }, [edges, nodeMap, posMap, lineGeometry]);
 
-    lineRef.current.geometry.dispose();
-    lineRef.current.geometry = geo;
-
-    if (matRef.current) {
-      matRef.current.opacity = opacity;
-      matRef.current.linewidth = linewidth;
-    }
-  }, [edges, nodeMap, posMap, opacity, linewidth]);
-
+  // Update material uniforms
   useEffect(() => {
-    if (matRef.current) {
-      matRef.current.resolution.set(size.width, size.height);
-    }
-  }, [size]);
+    lineMaterial.opacity = opacity;
+    lineMaterial.linewidth = linewidth;
+  }, [opacity, linewidth, lineMaterial]);
 
+  // Resolution sync
   useEffect(() => {
-    return () => {
-      lineObject.geometry.dispose();
-      lineMaterial.dispose();
-    };
-  }, [lineObject, lineMaterial]);
+    lineMaterial.resolution.set(size.width, size.height);
+  }, [size, lineMaterial]);
 
   if (edges.length === 0) return null;
 
-  return (
-    <primitive object={lineObject} ref={lineRef}>
-      <primitive
-        attach="material"
-        object={lineMaterial}
-        ref={matRef}
-      />
-    </primitive>
-  );
-}
+  return <primitive object={lineSegments} />;
+});
 
 // ---------------------------------------------------------------------------
 // Dashed edge pass — highlighted edges, animated dashOffset via useFrame
 // ---------------------------------------------------------------------------
 
-function DashedEdgePass({
+const DashedEdgePass = memo(function DashedEdgePass({
   edges,
   nodeMap,
   posMap,
@@ -358,17 +346,17 @@ function DashedEdgePass({
   linewidth: number;
   opacity: number;
 }) {
-  const lineRef = useRef<LineSegments2>(null);
-  const matRef = useRef<LineMaterial>(null);
   const { size } = useThree();
-  const lineObject = useMemo(() => new LineSegments2(), []);
+
+  const lineSegments = useMemo(() => new LineSegments2(), []);
+  const lineGeometry = useMemo(() => new LineSegmentsGeometry(), []);
   const lineMaterial = useMemo(
     () =>
       new LineMaterial({
         vertexColors: true,
-        linewidth: THICKNESS_MIN + THICKNESS_BOOST,
+        linewidth,
         transparent: true,
-        opacity: OPACITY_HIGHLIGHTED,
+        opacity,
         dashed: true,
         dashScale: 1,
         dashSize,
@@ -378,13 +366,23 @@ function DashedEdgePass({
         blending: NormalBlending,
         depthWrite: false,
         toneMapped: false,
-        resolution: [1, 1],
       } as ConstructorParameters<typeof LineMaterial>[0]),
-    [dashSize, gapSize]
+    []
   );
 
+  // Attach geometry + material on mount, dispose on unmount
   useEffect(() => {
-    if (!lineRef.current || !matRef.current || edges.length === 0) return;
+    lineSegments.geometry = lineGeometry;
+    lineSegments.material = lineMaterial;
+    return () => {
+      lineGeometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineSegments, lineMaterial, lineGeometry]);
+
+  // Update geometry data when edges change — mutate in place
+  useEffect(() => {
+    if (edges.length === 0) return;
 
     const { positions, colors, segmentCount } = buildCurveData(
       edges,
@@ -395,52 +393,31 @@ function DashedEdgePass({
 
     if (segmentCount === 0) return;
 
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(positions);
-    geo.setColors(colors);
+    lineGeometry.setPositions(positions);
+    lineGeometry.setColors(colors);
+    lineSegments.computeLineDistances();
+  }, [edges, nodeMap, posMap, lineGeometry, lineSegments]);
 
-    lineRef.current.geometry.dispose();
-    lineRef.current.geometry = geo;
-    lineRef.current.computeLineDistances();
-
-    if (matRef.current) {
-      matRef.current.opacity = opacity;
-      matRef.current.linewidth = linewidth;
-    }
-  }, [edges, nodeMap, posMap, opacity, linewidth]);
-
+  // Update material uniforms
   useEffect(() => {
-    if (matRef.current) {
-      matRef.current.resolution.set(size.width, size.height);
-    }
-  }, [size]);
+    lineMaterial.opacity = opacity;
+    lineMaterial.linewidth = linewidth;
+  }, [opacity, linewidth, lineMaterial]);
 
+  // Resolution sync
   useEffect(() => {
-    return () => {
-      lineObject.geometry.dispose();
-      lineMaterial.dispose();
-    };
-  }, [lineObject, lineMaterial]);
+    lineMaterial.resolution.set(size.width, size.height);
+  }, [size, lineMaterial]);
 
   // Animate dashOffset — only on highlighted edges
   useFrame((_, delta) => {
-    if (matRef.current) {
-      matRef.current.dashOffset -= delta * DASH_SPEED;
-    }
+    lineMaterial.dashOffset -= delta * DASH_SPEED;
   });
 
   if (edges.length === 0) return null;
 
-  return (
-    <primitive object={lineObject} ref={lineRef}>
-      <primitive
-        attach="material"
-        object={lineMaterial}
-        ref={matRef}
-      />
-    </primitive>
-  );
-}
+  return <primitive object={lineSegments} />;
+});
 
 // ---------------------------------------------------------------------------
 // Public
@@ -454,7 +431,7 @@ interface EdgesGeometryProps {
   readonly hoveredNodeId: string;
 }
 
-export function EdgesGeometry({
+export const EdgesGeometry = memo(function EdgesGeometry({
   edges,
   nodes,
   positions,
@@ -501,10 +478,7 @@ export function EdgesGeometry({
       const sorted = [...neighbor].sort((a, b) => b.weight - a.weight);
       return {
         neighborEdges: sorted.slice(0, MAX_HIGHLIGHTED_EDGES),
-        backgroundEdges: [
-          ...bg,
-          ...sorted.slice(MAX_HIGHLIGHTED_EDGES),
-        ],
+        backgroundEdges: [...bg, ...sorted.slice(MAX_HIGHLIGHTED_EDGES)],
       };
     }
 
@@ -576,4 +550,4 @@ export function EdgesGeometry({
       ))}
     </>
   );
-}
+});

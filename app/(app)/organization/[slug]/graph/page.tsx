@@ -8,6 +8,7 @@ import {
   Suspense,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -130,6 +131,17 @@ function GraphPageContent() {
 
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const apply = () => {
+      setIsDesktop(query.matches);
+    };
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
 
   const searchRef = useRef<GraphSearchHandle>(null);
   const cameraRef = useRef<CameraControllerHandle>(null);
@@ -235,82 +247,82 @@ function GraphPageContent() {
         {/* Graph with panel — Desktop */}
         {data && layout && !isLoading && !error && (
           <>
-            {/* Desktop: resizable split */}
-            <div className="hidden h-full lg:block">
-              <ResizablePanelGroup direction="horizontal">
-                <ResizablePanel defaultSize={showPanel ? 65 : 100}>
-                  <div
-                    className={`h-full ${searchFocused ? "" : "ring-1 ring-slate-700/50"}`}
-                  >
-                    <GraphCanvas
-                      cameraRef={cameraRef}
-                      data={data}
-                      hops={hops}
-                      hoveredNodeId={hoveredNodeId}
-                      layout={layout}
-                      onHover={setHoveredNodeId}
-                      onSelect={setSelected}
-                      selectedNodeId={selected}
-                      view={view}
-                    />
-                  </div>
-                </ResizablePanel>
-                {showPanel && (
-                  <>
-                    <ResizableHandle />
-                    <ResizablePanel defaultSize={35} minSize={25}>
-                      <BlastPanel
+            {isDesktop === null ? null : isDesktop ? (
+              <div className="h-full">
+                <ResizablePanelGroup direction="horizontal">
+                  <ResizablePanel defaultSize={showPanel ? 65 : 100}>
+                    <div
+                      className={`h-full ${searchFocused ? "" : "ring-1 ring-slate-700/50"}`}
+                    >
+                      <GraphCanvas
+                        cameraRef={cameraRef}
                         data={data}
-                        onReduceHops={handleReduceHops}
+                        hops={hops}
+                        hoveredNodeId={hoveredNodeId}
+                        layout={layout}
+                        onHover={setHoveredNodeId}
                         onSelect={setSelected}
-                        orgName={orgName}
                         selectedNodeId={selected}
-                        slug={slug}
-                      />
-                    </ResizablePanel>
-                  </>
-                )}
-              </ResizablePanelGroup>
-            </div>
-
-            {/* Mobile: full canvas + bottom sheet */}
-            <div className="block h-full lg:hidden">
-              <GraphCanvas
-                cameraRef={cameraRef}
-                data={data}
-                hops={hops}
-                hoveredNodeId={hoveredNodeId}
-                layout={layout}
-                onHover={setHoveredNodeId}
-                onSelect={setSelected}
-                selectedNodeId={selected}
-                view={view}
-              />
-              {showPanel && (
-                <Sheet
-                  onOpenChange={(open) => {
-                    if (!open) clearSelected();
-                  }}
-                  open={Boolean(selected)}
-                >
-                  <SheetContent className="bg-[#05070B] p-0" side="bottom">
-                    <SheetHeader className="sr-only">
-                      <SheetTitle>Blast Radius Details</SheetTitle>
-                    </SheetHeader>
-                    <div className="max-h-[60vh] overflow-y-auto">
-                      <BlastPanel
-                        data={data}
-                        onReduceHops={handleReduceHops}
-                        onSelect={setSelected}
-                        orgName={orgName}
-                        selectedNodeId={selected}
-                        slug={slug}
+                        view={view}
                       />
                     </div>
-                  </SheetContent>
-                </Sheet>
-              )}
-            </div>
+                  </ResizablePanel>
+                  {showPanel && (
+                    <>
+                      <ResizableHandle />
+                      <ResizablePanel defaultSize={35} minSize={25}>
+                        <BlastPanel
+                          data={data}
+                          onReduceHops={handleReduceHops}
+                          onSelect={setSelected}
+                          orgName={orgName}
+                          selectedNodeId={selected}
+                          slug={slug}
+                        />
+                      </ResizablePanel>
+                    </>
+                  )}
+                </ResizablePanelGroup>
+              </div>
+            ) : (
+              <div className="h-full">
+                <GraphCanvas
+                  cameraRef={cameraRef}
+                  data={data}
+                  hops={hops}
+                  hoveredNodeId={hoveredNodeId}
+                  layout={layout}
+                  onHover={setHoveredNodeId}
+                  onSelect={setSelected}
+                  selectedNodeId={selected}
+                  view={view}
+                />
+                {showPanel && (
+                  <Sheet
+                    onOpenChange={(open) => {
+                      if (!open) clearSelected();
+                    }}
+                    open={Boolean(selected)}
+                  >
+                    <SheetContent className="bg-[#05070B] p-0" side="bottom">
+                      <SheetHeader className="sr-only">
+                        <SheetTitle>Blast Radius Details</SheetTitle>
+                      </SheetHeader>
+                      <div className="max-h-[60vh] overflow-y-auto">
+                        <BlastPanel
+                          data={data}
+                          onReduceHops={handleReduceHops}
+                          onSelect={setSelected}
+                          orgName={orgName}
+                          selectedNodeId={selected}
+                          slug={slug}
+                        />
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

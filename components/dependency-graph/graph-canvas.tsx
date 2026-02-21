@@ -72,6 +72,8 @@ export function GraphCanvas({
       {/* Subtle packets on selected-neighborhood edges only */}
       <EdgePackets
         edges={data.edges}
+        hoveredNodeId={hoveredNodeId}
+        nodes={data.nodes}
         positions={layout.positions}
         selectedNodeId={selectedNodeId}
       />

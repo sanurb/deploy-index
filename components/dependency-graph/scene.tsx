@@ -9,7 +9,7 @@ import {
 } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import type { ReactNode } from "react";
-import { Color as ThreeColor, FogExp2 } from "three";
+import { FogExp2, Color as ThreeColor } from "three";
 import { NEON_BG_CSS, NEON_FOG } from "@/lib/graph/neon-palette";
 
 /**

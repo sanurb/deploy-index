@@ -1,7 +1,7 @@
 "use client";
 
 import { useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   BoxGeometry,
   Color,
@@ -20,14 +20,6 @@ import type { GraphEdge, GraphNode, NodePosition } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
 // Brightness — controlled emissive range with visible idle floor.
-// Interaction remains emphasis, not binary visibility.
-//
-//   Focus:      0.68   — peak, subtle bloom potential
-//   Selected:   0.62   — clear emphasis
-//   Hovered:    0.58   — light emphasis
-//   Neighbor:   0.50   — context remains legible
-//   Idle:       0.44   — always readable
-//   Dimmed:     0.34   — de-emphasized, never "off"
 // ---------------------------------------------------------------------------
 
 const BRIGHT_FOCUS = 0.68;
@@ -45,7 +37,6 @@ const LINE_WIDTH_FOCUS = 2.2;
 
 // ---------------------------------------------------------------------------
 // Edge templates — pre-computed at module level.
-// EdgesGeometry extracts only hard edges (no internal triangulation).
 // ---------------------------------------------------------------------------
 
 function extractEdgeTemplate(
@@ -98,7 +89,6 @@ function applyConfidenceDesaturation(color: Color, score: number): void {
   }
 }
 
-/** Desaturate and dim based on distance from origin (hop-correlated). */
 function applyDepthDesaturation(color: Color, distFromOrigin: number): void {
   if (distFromOrigin < 5) return;
   const t = Math.min((distFromOrigin - 5) / 25, 1);
@@ -125,7 +115,7 @@ interface NodesMeshProps {
 // Per-kind: LineSegments2 for visible wireframe + invisible mesh for hit test
 // ---------------------------------------------------------------------------
 
-function KindMesh({
+const KindMesh = memo(function KindMesh({
   nodes,
   positions,
   focusNodeId,
@@ -147,11 +137,12 @@ function KindMesh({
   onClick: (nodeId: string) => void;
 }) {
   const hitRef = useRef<InstancedMesh>(null);
-  const lineRef = useRef<LineSegments2>(null);
-  const matRef = useRef<LineMaterial>(null);
-  const { invalidate, size } = useThree();
+  const { size } = useThree();
   const count = nodes.length;
-  const lineObject = useMemo(() => new LineSegments2(), []);
+
+  // Stable Three.js objects — created once per mount
+  const lineSegments = useMemo(() => new LineSegments2(), []);
+  const lineGeometry = useMemo(() => new LineSegmentsGeometry(), []);
   const lineMaterial = useMemo(
     () =>
       new LineMaterial({
@@ -163,10 +154,23 @@ function KindMesh({
         blending: NormalBlending,
         depthWrite: false,
         toneMapped: false,
-        resolution: [1, 1],
       } as ConstructorParameters<typeof LineMaterial>[0]),
     []
   );
+
+  // Attach geometry + material on mount, dispose on unmount
+  useEffect(() => {
+    lineSegments.geometry = lineGeometry;
+    lineSegments.material = lineMaterial;
+    return () => {
+      lineGeometry.dispose();
+      lineMaterial.dispose();
+    };
+  }, [lineSegments, lineMaterial, lineGeometry]);
+
+  // Persistent buffers to avoid reallocation when count is stable
+  const posBufferRef = useRef<Float32Array | null>(null);
+  const colBufferRef = useRef<Float32Array | null>(null);
 
   const nodeIndexMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -176,22 +180,12 @@ function KindMesh({
     return map;
   }, [nodes]);
 
-  // Keep LineMaterial resolution in sync
+  // Resolution sync
   useEffect(() => {
-    if (matRef.current) {
-      matRef.current.resolution.set(size.width, size.height);
-    }
-  }, [size]);
+    lineMaterial.resolution.set(size.width, size.height);
+  }, [size, lineMaterial]);
 
-  // Dispose stable custom three.js objects on unmount.
-  useEffect(() => {
-    return () => {
-      lineObject.geometry.dispose();
-      lineMaterial.dispose();
-    };
-  }, [lineObject, lineMaterial]);
-
-  // Determine line width — thicker when focus/selected is in this group
+  // Determine line width
   const hasFocusOrSelected = nodes.some(
     (n) => n.nodeId === focusNodeId || n.nodeId === selectedNodeId
   );
@@ -202,19 +196,88 @@ function KindMesh({
       ? LINE_WIDTH_ACTIVE
       : LINE_WIDTH_IDLE;
 
-  // Build line geometry + update hit mesh transforms
+  // Effect A — Positions + hit mesh transforms
+  // Only re-runs when positions/scale-affecting props change
   useEffect(() => {
-    const hit = hitRef.current;
-    const line = lineRef.current;
-    if (!line || count === 0) return;
+    if (count === 0) return;
 
     const template = EDGE_TEMPLATES[geometry];
-    const verticesPerEdge = 6; // 2 endpoints * 3 coords
+    const verticesPerEdge = 6;
     const edgesPerNode = template.length / verticesPerEdge;
-    const totalSegments = count * edgesPerNode;
+    const totalFloats = count * edgesPerNode * verticesPerEdge;
 
-    const outPos = new Float32Array(totalSegments * verticesPerEdge);
-    const outCol = new Float32Array(totalSegments * verticesPerEdge);
+    // Reuse buffer if size matches
+    if (!posBufferRef.current || posBufferRef.current.length !== totalFloats) {
+      posBufferRef.current = new Float32Array(totalFloats);
+    }
+    const outPos = posBufferRef.current;
+
+    const hit = hitRef.current;
+
+    for (let i = 0; i < count; i++) {
+      const node = nodes[i];
+      const pos = positions.get(node.nodeId);
+      if (!pos) continue;
+
+      const isFocus = node.nodeId === focusNodeId;
+      const isSelected = node.nodeId === selectedNodeId;
+      const s = nodeScale(node, isFocus, isSelected);
+
+      // Update hit mesh transform
+      if (hit) {
+        tmpObj.position.set(pos.x, pos.y, pos.z);
+        tmpObj.scale.setScalar(s);
+        tmpObj.updateMatrix();
+        hit.setMatrixAt(i, tmpObj.matrix);
+      }
+
+      // Write edge segments: scale template vertices + translate to position
+      const baseOff = i * edgesPerNode * verticesPerEdge;
+      for (let e = 0; e < edgesPerNode; e++) {
+        const src = e * verticesPerEdge;
+        const dst = baseOff + src;
+
+        outPos[dst + 0] = template[src + 0] * s + pos.x;
+        outPos[dst + 1] = template[src + 1] * s + pos.y;
+        outPos[dst + 2] = template[src + 2] * s + pos.z;
+        outPos[dst + 3] = template[src + 3] * s + pos.x;
+        outPos[dst + 4] = template[src + 4] * s + pos.y;
+        outPos[dst + 5] = template[src + 5] * s + pos.z;
+      }
+    }
+
+    if (hit) {
+      hit.instanceMatrix.needsUpdate = true;
+    }
+
+    lineGeometry.setPositions(outPos);
+    lineSegments.computeLineDistances();
+  }, [
+    nodes,
+    positions,
+    focusNodeId,
+    selectedNodeId,
+    count,
+    geometry,
+    lineGeometry,
+    lineSegments,
+  ]);
+
+  // Effect B — Colors only
+  // Re-runs on hover/selection changes (lightweight — just color buffer)
+  useEffect(() => {
+    if (count === 0) return;
+
+    const template = EDGE_TEMPLATES[geometry];
+    const verticesPerEdge = 6;
+    const edgesPerNode = template.length / verticesPerEdge;
+    const totalFloats = count * edgesPerNode * verticesPerEdge;
+
+    // Reuse buffer if size matches
+    if (!colBufferRef.current || colBufferRef.current.length !== totalFloats) {
+      colBufferRef.current = new Float32Array(totalFloats);
+    }
+    const outCol = colBufferRef.current;
 
     const hasSelection = Boolean(selectedNodeId);
     const activeNode = selectedNodeId || hoveredNodeId;
@@ -231,7 +294,6 @@ function KindMesh({
         activeNode &&
         (node.nodeId === activeNode || neighborhoodSet.has(node.nodeId));
 
-      // Brightness
       let brightness: number;
       if (isFocus) brightness = BRIGHT_FOCUS;
       else if (isHovered) brightness = BRIGHT_HOVERED;
@@ -247,37 +309,17 @@ function KindMesh({
         brightness = Math.max(brightness, floor);
       }
 
-      const s = nodeScale(node, isFocus, isSelected);
       const neon = neonColorFromKey(node.colorKey);
-      if (!isFocus && !isSelected) applyConfidenceDesaturation(neon, node.confidenceScore);
+      if (!isFocus && !isSelected)
+        applyConfidenceDesaturation(neon, node.confidenceScore);
       const distFromOrigin = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-      if (!isFocus && !isSelected && !isHovered) applyDepthDesaturation(neon, distFromOrigin);
+      if (!isFocus && !isSelected && !isHovered)
+        applyDepthDesaturation(neon, distFromOrigin);
       tmpColor.copy(neon).multiplyScalar(brightness);
 
-      // Update hit mesh transform
-      if (hit) {
-        tmpObj.position.set(pos.x, pos.y, pos.z);
-        tmpObj.scale.setScalar(s);
-        tmpObj.updateMatrix();
-        hit.setMatrixAt(i, tmpObj.matrix);
-      }
-
-      // Write edge segments: scale template vertices + translate to position
       const baseOff = i * edgesPerNode * verticesPerEdge;
       for (let e = 0; e < edgesPerNode; e++) {
-        const src = e * verticesPerEdge;
-        const dst = baseOff + src;
-
-        // Endpoint A
-        outPos[dst + 0] = template[src + 0] * s + pos.x;
-        outPos[dst + 1] = template[src + 1] * s + pos.y;
-        outPos[dst + 2] = template[src + 2] * s + pos.z;
-        // Endpoint B
-        outPos[dst + 3] = template[src + 3] * s + pos.x;
-        outPos[dst + 4] = template[src + 4] * s + pos.y;
-        outPos[dst + 5] = template[src + 5] * s + pos.z;
-
-        // Color for both endpoints
+        const dst = baseOff + e * verticesPerEdge;
         outCol[dst + 0] = tmpColor.r;
         outCol[dst + 1] = tmpColor.g;
         outCol[dst + 2] = tmpColor.b;
@@ -287,23 +329,7 @@ function KindMesh({
       }
     }
 
-    if (hit) {
-      hit.instanceMatrix.needsUpdate = true;
-    }
-
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(outPos);
-    geo.setColors(outCol);
-
-    line.geometry.dispose();
-    line.geometry = geo;
-    line.computeLineDistances();
-
-    if (matRef.current) {
-      matRef.current.linewidth = linewidth;
-    }
-
-    invalidate();
+    lineGeometry.setColors(outCol);
   }, [
     nodes,
     positions,
@@ -313,9 +339,13 @@ function KindMesh({
     neighborhoodSet,
     count,
     geometry,
-    linewidth,
-    invalidate,
+    lineGeometry,
   ]);
+
+  // Effect C — Linewidth
+  useEffect(() => {
+    lineMaterial.linewidth = linewidth;
+  }, [linewidth, lineMaterial]);
 
   const handlePointerOver = useCallback(
     (e: { instanceId?: number; stopPropagation: () => void }) => {
@@ -369,28 +399,22 @@ function KindMesh({
         <meshBasicMaterial
           colorWrite={false}
           depthWrite={false}
-          transparent
           opacity={0}
+          transparent
         />
       </instancedMesh>
 
       {/* Visible wireframe — LineSegments2 with controllable thickness */}
-      <primitive object={lineObject} ref={lineRef} renderOrder={2}>
-        <primitive
-          attach="material"
-          object={lineMaterial}
-          ref={matRef}
-        />
-      </primitive>
+      <primitive object={lineSegments} renderOrder={2} />
     </group>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Public — splits by kind, computes neighborhood
 // ---------------------------------------------------------------------------
 
-export function NodesMesh({
+export const NodesMesh = memo(function NodesMesh({
   nodes,
   edges,
   positions: positionsArray,
@@ -450,4 +474,4 @@ export function NodesMesh({
       <KindMesh {...shared} geometry="box" nodes={rtNodes} />
     </>
   );
-}
+});
